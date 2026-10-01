@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 void main() {
   runApp(const MyMusicApp());
@@ -12,7 +13,7 @@ class MyMusicApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'My Music App',
+      title: 'Music App',
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF121212),
         appBarTheme: const AppBarTheme(
@@ -30,17 +31,17 @@ class MyMusicApp extends StatelessWidget {
   }
 }
 
-class SongItem {
+class OnlineSong {
+  final String id;
   final String title;
   final String artist;
-  final String url;
-  final bool isEmpty;
+  final String thumbnailUrl;
 
-  SongItem({
+  OnlineSong({
+    required this.id,
     required this.title,
     required this.artist,
-    required this.url,
-    this.isEmpty = false,
+    required this.thumbnailUrl,
   });
 }
 
@@ -52,42 +53,54 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+  int _currentIndex = 1; // Default to SEARCH tab
 
-  // Recent Searches List (Max 5)
-  final List<String> _recentSearches = [];
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
-  // 30 Boxes for Home Tab (1 Real Song + 29 Empty Slots)
-  final List<SongItem> _homeGridBoxes = [
-    SongItem(
-      title: 'ASTARR',
-      artist: 'Prem Dhillon',
-      url: 'https://archive.org/download/sample-audio-files/sample1.mp3',
-    ),
-    ...List.generate(
-      29,
-      (index) => SongItem(
-        title: 'Empty Slot ${index + 1}',
-        artist: 'Add Song Here',
-        url: '',
-        isEmpty: true,
-      ),
-    ),
-  ];
+  final List<String> _recentSearches = [];
+  List<OnlineSong> _searchResults = [];
+  bool _isLoading = false;
 
-  void _executeSearch(String query) {
+  Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
+
     setState(() {
+      _isLoading = true;
       _recentSearches.remove(query);
       _recentSearches.insert(0, query);
       if (_recentSearches.length > 5) {
         _recentSearches.removeLast();
       }
-      _searchQuery = query;
       _searchController.text = query;
     });
+
+    try {
+      final searchList = await _yt.search.search(query);
+      setState(() {
+        _searchResults = searchList.map((video) {
+          return OnlineSong(
+            id: video.id.value,
+            title: video.title,
+            artist: video.author,
+            thumbnailUrl: video.thumbnails.highResUrl,
+          );
+        }).toList();
+      });
+    } catch (e) {
+      debugPrint('Search error: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _yt.close();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -95,8 +108,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     final List<Widget> pages = [
       _buildHomeTab(),
       _buildSearchTab(),
-      _buildEmptyTab('Create'),
-      _buildEmptyTab('Premium'),
+      _buildEmptyTab('CREATE'),
+      _buildEmptyTab('PREMIUM'),
     ];
 
     return Scaffold(
@@ -118,7 +131,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // --- HOME TAB ---
   Widget _buildHomeTab() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAlignment.start,
       children: [
         const Padding(
           padding: EdgeInsets.all(16.0),
@@ -128,109 +141,52 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         ),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: GridView.builder(
-              itemCount: _homeGridBoxes.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.8,
-              ),
-              itemBuilder: (context, index) {
-                final item = _homeGridBoxes[index];
-                return _buildSongCard(item, index);
-              },
+          child: GridView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: 29,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.8,
             ),
+            itemBuilder: (context, index) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181818),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.music_note, color: Colors.grey, size: 40),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Box ${index + 1}',
+                      style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSongCard(SongItem item, int index) {
-    return GestureDetector(
-      onTap: () {
-        if (item.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Slot ${index + 1} is empty.')),
-          );
-        } else {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PlayerScreen(song: item),
-            ),
-          );
-        }
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF181818),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: item.isEmpty ? const Color(0xFF282828) : Colors.purpleAccent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Center(
-                  child: Icon(
-                    item.isEmpty ? Icons.add : Icons.music_note,
-                    size: 48,
-                    color: item.isEmpty ? Colors.grey : Colors.white,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              item.title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: item.isEmpty ? Colors.grey : Colors.white,
-                fontSize: 15,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.artist,
-              style: const TextStyle(color: Colors.grey, fontSize: 13),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // --- SEARCH TAB ---
   Widget _buildSearchTab() {
-    final searchResults = _homeGridBoxes
-        .where((song) =>
-            !song.isEmpty &&
-            (song.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                song.artist.toLowerCase().contains(_searchQuery.toLowerCase())))
-        .toList();
-
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAlignment.start,
         children: [
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search songs or artists...',
+              hintText: 'Search any song (e.g., Badboy)...',
               prefixIcon: const Icon(Icons.search, color: Colors.white),
               filled: true,
               fillColor: const Color(0xFF282828),
@@ -239,10 +195,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 borderSide: BorderSide.none,
               ),
             ),
-            onSubmitted: (value) => _executeSearch(value),
+            onSubmitted: _performSearch,
           ),
           const SizedBox(height: 16),
 
+          // Recent Searches (Limit 5)
           if (_recentSearches.isNotEmpty) ...[
             const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
@@ -252,68 +209,80 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 return ActionChip(
                   label: Text(search),
                   backgroundColor: const Color(0xFF282828),
-                  onPressed: () => _executeSearch(search),
+                  onPressed: () => _performSearch(search),
                 );
               }).toList(),
             ),
             const SizedBox(height: 16),
           ],
 
-          if (_searchQuery.isNotEmpty) ...[
-            const Text('Results', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: searchResults.isEmpty
-                  ? const Center(child: Text('No matching songs found.', style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
-                      itemCount: searchResults.length,
-                      itemBuilder: (context, index) {
-                        final song = searchResults[index];
-                        return ListTile(
-                          leading: const Icon(Icons.music_note, color: Colors.purpleAccent),
-                          title: Text(song.title),
-                          subtitle: Text(song.artist),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => PlayerScreen(song: song),
+          // Search Results
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+                : _searchResults.isNotEmpty
+                    ? ListView.builder(
+                        itemCount: _searchResults.length,
+                        itemBuilder: (context, index) {
+                          final song = _searchResults[index];
+                          return ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.network(
+                                song.thumbnailUrl,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.music_note, color: Colors.purpleAccent),
                               ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ] else ...[
-            const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            Expanded(
-              child: GridView.builder(
-                itemCount: 4,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 1.2,
-                ),
-                itemBuilder: (context, index) {
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF282828),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Category ${index + 1}',
-                        style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                            ),
+                            title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PlayerScreen(song: song),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAlignment.start,
+                        children: [
+                          const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 12),
+                          Expanded(
+                            child: GridView.builder(
+                              itemCount: 4,
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 1.2,
+                              ),
+                              itemBuilder: (context, index) {
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF282828),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      'Category ${index + 1}',
+                                      style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+          ),
         ],
       ),
     );
@@ -329,8 +298,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
+// --- PLAYER SCREEN ---
 class PlayerScreen extends StatefulWidget {
-  final SongItem song;
+  final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
 
   @override
@@ -338,26 +308,46 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  late AudioPlayer _audioPlayer;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
+
+  bool _isLoadingAudio = true;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
-    _initAudio();
+    _loadAndPlayAudio();
   }
 
-  Future<void> _initAudio() async {
+  Future<void> _loadAndPlayAudio() async {
     try {
-      await _audioPlayer.setUrl(widget.song.url);
+      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
+      final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
+
+      // Configure audio source with stream URL
+      final audioUrl = audioStreamInfo.url.toString();
+      await _audioPlayer.setUrl(audioUrl);
       _audioPlayer.play();
     } catch (e) {
-      debugPrint("Error loading audio: $e");
+      debugPrint("Audio extraction error: $e");
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Unable to play track. Try another song.";
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingAudio = false;
+        });
+      }
     }
   }
 
   @override
   void dispose() {
+    _yt.close();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -386,92 +376,106 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Column(
           children: [
             const Spacer(),
-            Container(
-              height: 280,
-              decoration: BoxDecoration(
-                color: Colors.purpleAccent,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Center(
-                child: Icon(Icons.music_note, size: 100, color: Colors.white70),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                widget.song.thumbnailUrl,
+                height: 260,
+                width: 260,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  height: 260,
+                  width: 260,
+                  color: Colors.purpleAccent,
+                  child: const Icon(Icons.music_note, size: 100, color: Colors.white),
+                ),
               ),
             ),
             const Spacer(),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                widget.song.title,
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
+            Text(
+              widget.song.title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                widget.song.artist,
-                style: const TextStyle(fontSize: 16, color: Colors.grey),
-              ),
+            const SizedBox(height: 8),
+            Text(
+              widget.song.artist,
+              style: const TextStyle(color: Colors.grey, fontSize: 16),
             ),
             const SizedBox(height: 20),
-            StreamBuilder<Duration>(
-              stream: _audioPlayer.positionStream,
-              builder: (context, positionSnapshot) {
-                final position = positionSnapshot.data ?? Duration.zero;
-                final duration = _audioPlayer.duration ?? Duration.zero;
 
-                return Column(
-                  children: [
-                    Slider(
-                      activeColor: Colors.purpleAccent,
-                      inactiveColor: Colors.grey[800],
-                      min: 0.0,
-                      max: duration.inMilliseconds.toDouble() > 0.0
-                          ? duration.inMilliseconds.toDouble()
-                          : 1.0,
-                      value: position.inMilliseconds.toDouble().clamp(
-                            0.0,
-                            duration.inMilliseconds.toDouble() > 0.0
-                                ? duration.inMilliseconds.toDouble()
-                                : 1.0,
-                          ),
-                      onChanged: (value) {
-                        _audioPlayer.seek(Duration(milliseconds: value.toInt()));
-                      },
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(_formatDuration(position), style: const TextStyle(color: Colors.grey)),
-                          Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey)),
-                        ],
+            if (_isLoadingAudio)
+              const CircularProgressIndicator(color: Colors.purpleAccent)
+            else if (_errorMessage.isNotEmpty)
+              Text(_errorMessage, style: const TextStyle(color: Colors.redAccent))
+            else ...[
+              // Stream Progress Slider & Timers
+              StreamBuilder<Duration>(
+                stream: _audioPlayer.positionStream,
+                builder: (context, snapshot) {
+                  final position = snapshot.data ?? Duration.zero;
+                  final duration = _audioPlayer.duration ?? Duration.zero;
+
+                  final maxMilliseconds = duration.inMilliseconds > 0
+                      ? duration.inMilliseconds.toDouble()
+                      : 1.0;
+                  final currentMilliseconds = position.inMilliseconds
+                      .toDouble()
+                      .clamp(0.0, maxMilliseconds);
+
+                  return Column(
+                    children: [
+                      Slider(
+                        activeColor: Colors.purpleAccent,
+                        inactiveColor: Colors.grey[800],
+                        min: 0.0,
+                        max: maxMilliseconds,
+                        value: currentMilliseconds,
+                        onChanged: (value) {
+                          _audioPlayer.seek(Duration(milliseconds: value.toInt()));
+                        },
                       ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(_formatDuration(position), style: const TextStyle(color: Colors.grey)),
+                            Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: 10),
+
+              // Play / Pause Controls
+              StreamBuilder<PlayerState>(
+                stream: _audioPlayer.playerStateStream,
+                builder: (context, snapshot) {
+                  final isPlaying = snapshot.data?.playing ?? false;
+                  return IconButton(
+                    iconSize: 72,
+                    icon: Icon(
+                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                      color: Colors.purpleAccent,
                     ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 10),
-            StreamBuilder<PlayerState>(
-              stream: _audioPlayer.playerStateStream,
-              builder: (context, snapshot) {
-                final isPlaying = snapshot.data?.playing ?? false;
-                return IconButton(
-                  iconSize: 72,
-                  icon: Icon(
-                    isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                    color: Colors.purpleAccent,
-                  ),
-                  onPressed: () {
-                    if (isPlaying) {
-                      _audioPlayer.pause();
-                    } else {
-                      _audioPlayer.play();
-                    }
-                  },
-                );
-              },
-            ),
+                    onPressed: () {
+                      if (isPlaying) {
+                        _audioPlayer.pause();
+                      } else {
+                        _audioPlayer.play();
+                      }
+                    },
+                  );
+                },
+              ),
+            ],
             const Spacer(),
           ],
         ),
