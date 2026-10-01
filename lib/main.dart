@@ -2,56 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 void main() {
-  runApp(const SpotifyStyleMusicApp());
-}
-
-class SpotifyStyleMusicApp extends StatelessWidget {
-  const SpotifyStyleMusicApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'My Music App',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF121212), elevation: 0),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF121212),
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.grey,
-        ),
-      ),
-      home: const MainNavigationScreen(),
-    );
-  }
-}
-
-class SongItem {
-  final String title;
-  final String artist;
-  final String url;
-  final bool isEmpty;
-
-  SongItem({
-    required this.title,
-    required this.artist,
-    required this.url,
-    this.isEmpty = false,
-  });
-}
-
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
-
-  @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();Here is the complete, updated **`lib/main.dart`** code. It fixes the audio playback issue, adds the seek bar (progress slider with current position and remaining duration), and implements a bottom navigation bar with four tabs (**Home**, **Search**, **Create**, **Premium**) including recent search history logic limited to 5 items.
-
-```dart
-import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
-
-void main() {
   runApp(const MyMusicApp());
 }
 
@@ -114,7 +64,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     SongItem(
       title: 'ASTARR',
       artist: 'Prem Dhillon',
-      url: '[https://archive.org/download/sample-audio-files/sample1.mp3](https://archive.org/download/sample-audio-files/sample1.mp3)',
+      url: 'https://archive.org/download/sample-audio-files/sample1.mp3',
     ),
     ...List.generate(
       29,
@@ -168,7 +118,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // --- HOME TAB ---
   Widget _buildHomeTab() {
     return Column(
-      crossAxisAlignment: CrossAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
           padding: EdgeInsets.all(16.0),
@@ -222,7 +172,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         ),
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Container(
@@ -275,7 +225,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _searchController,
@@ -293,7 +243,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Recent Searches Section
           if (_recentSearches.isNotEmpty) ...[
             const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
@@ -310,7 +259,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Search Results
           if (_searchQuery.isNotEmpty) ...[
             const Text('Results', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
@@ -338,7 +286,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     ),
             ),
           ] else ...[
-            // 4 Empty Boxes below Recent Searches when search is idle
             const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Expanded(
@@ -372,7 +319,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  // --- PLACEHOLDER TAB ---
   Widget _buildEmptyTab(String title) {
     return Center(
       child: Text(
@@ -383,7 +329,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- PLAYER SCREEN WITH PROGRESS BAR ---
 class PlayerScreen extends StatefulWidget {
   final SongItem song;
   const PlayerScreen({super.key, required this.song});
@@ -467,8 +412,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Real-Time Progress Bar & Duration Indicators
             StreamBuilder<Duration>(
               stream: _audioPlayer.positionStream,
               builder: (context, positionSnapshot) {
@@ -508,10 +451,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 );
               },
             ),
-
             const SizedBox(height: 10),
-
-            // Play / Pause Button
             StreamBuilder<PlayerState>(
               stream: _audioPlayer.playerStateStream,
               builder: (context, snapshot) {
