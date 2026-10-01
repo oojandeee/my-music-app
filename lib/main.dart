@@ -131,7 +131,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   // --- HOME TAB ---
   Widget _buildHomeTab() {
     return Column(
-      crossAxisAlignment: CrossAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
           padding: EdgeInsets.all(16.0),
@@ -181,12 +181,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
-        crossAxisAlignment: CrossAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search any song (e.g., Badboy)...',
+              hintText: 'Search any song...',
               prefixIcon: const Icon(Icons.search, color: Colors.white),
               filled: true,
               fillColor: const Color(0xFF282828),
@@ -251,7 +251,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         },
                       )
                     : Column(
-                        crossAxisAlignment: CrossAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           const SizedBox(height: 12),
@@ -325,7 +325,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
       final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
 
-      // Configure audio source with stream URL
       final audioUrl = audioStreamInfo.url.toString();
       await _audioPlayer.setUrl(audioUrl);
       _audioPlayer.play();
@@ -411,7 +410,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
             else if (_errorMessage.isNotEmpty)
               Text(_errorMessage, style: const TextStyle(color: Colors.redAccent))
             else ...[
-              // Stream Progress Slider & Timers
               StreamBuilder<Duration>(
                 stream: _audioPlayer.positionStream,
                 builder: (context, snapshot) {
@@ -454,7 +452,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
               const SizedBox(height: 10),
 
-              // Play / Pause Controls
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
                 builder: (context, snapshot) {
