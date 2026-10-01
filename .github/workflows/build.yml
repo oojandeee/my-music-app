@@ -23,6 +23,9 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Create native Android project files
+        run: flutter create . --platforms=android --org=com.example
+
       - name: Install dependencies
         run: flutter pub get
 
