@@ -49,9 +49,8 @@ class _HomeScreenState extends State<HomeScreen> {
     SongItem(
       title: 'ASTARR',
       artist: 'Prem Dhillon',
-      url: 'https://archive.org/download/sample-audio-files/sample1.mp3', // Replace with direct stream link
+      url: 'https://archive.org/download/sample-audio-files/sample1.mp3',
     ),
-    // 29 Empty Placeholder Boxes for future songs/albums
     ...List.generate(
       29,
       (index) => SongItem(
@@ -68,17 +67,13 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Jump Back In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
-        actions: [
-          IconButton(icon: const Icon(Icons.search), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
-        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12.0),
         child: GridView.builder(
           itemCount: _gridBoxes.length,
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2, // 2 Columns Grid Layout
+            crossAxisCount: 2,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             childAspectRatio: 0.8,
@@ -89,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 if (item.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Box ${index + 1} is empty. Add a song URL in main.dart!')),
+                    SnackBar(content: Text('Box ${index + 1} is empty.')),
                   );
                 } else {
                   Navigator.push(
@@ -107,7 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 padding: const EdgeInsets.all(12),
                 child: Column(
-                  crossAxisAlignment: CrossAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
                       child: Container(
@@ -117,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         child: Center(
                           child: Icon(
-                            item.isEmpty ? Icons.add_music_node : Icons.music_note,
+                            item.isEmpty ? Icons.add : Icons.music_note,
                             size: 48,
                             color: item.isEmpty ? Colors.grey : Colors.white,
                           ),
@@ -176,7 +171,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _audioPlayer.setUrl(widget.song.url);
       _audioPlayer.play();
     } catch (e) {
-      debugPrint("Error streaming audio: $e");
+      debugPrint("Error loading audio: $e");
     }
   }
 
@@ -194,7 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           icon: const Icon(Icons.keyboard_arrow_down),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Playing from Playlist', style: TextStyle(fontSize: 14)),
+        title: const Text('Now Playing', style: TextStyle(fontSize: 14)),
         centerTitle: true,
       ),
       body: Padding(
