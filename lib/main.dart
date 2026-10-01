@@ -1,94 +1,182 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:audio_session/audio_session.dart';
 
-void main() => runApp(const MaterialApp(
-      home: MainNavigationScreen(),
+void main() {
+  runApp(const SpotifyStyleMusicApp());
+}
+
+class SpotifyStyleMusicApp extends StatelessWidget {
+  const SpotifyStyleMusicApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-    ));
+      title: 'My Music App',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF121212), elevation: 0),
+      ),
+      home: const HomeScreen(),
+    );
+  }
+}
 
-class Song {
-  final String id;
+class SongItem {
   final String title;
+  final String artist;
   final String url;
+  final bool isEmpty;
 
-  Song({
-    required this.id,
+  SongItem({
     required this.title,
+    required this.artist,
     required this.url,
+    this.isEmpty = false,
   });
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  late AudioPlayer _audioPlayer;
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
+class _HomeScreenState extends State<HomeScreen> {
+  // 30 Total Boxes (1 Real Song + 29 Empty Slots)
+  final List<SongItem> _gridBoxes = [
+    SongItem(
+      title: 'ASTARR',
+      artist: 'Prem Dhillon',
+      url: 'https://archive.org/download/sample-audio-files/sample1.mp3', // Replace with direct stream link
+    ),
+    // 29 Empty Placeholder Boxes for future songs/albums
+    ...List.generate(
+      29,
+      (index) => SongItem(
+        title: 'Empty Slot ${index + 1}',
+        artist: 'Add Song Here',
+        url: '',
+        isEmpty: true,
+      ),
+    ),
+  ];
 
-  // YOUR DIRECT INTERNET ARCHIVE MUSIC LINK
-  final Song _currentSong = Song(
-    id: "1",
-    title: "ASTARR - Prem Dhillon",
-    url: "https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a",
-  );
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Jump Back In', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
+        actions: [
+          IconButton(icon: const Icon(Icons.search), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        child: GridView.builder(
+          itemCount: _gridBoxes.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2, // 2 Columns Grid Layout
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 0.8,
+          ),
+          itemBuilder: (context, index) {
+            final item = _gridBoxes[index];
+            return GestureDetector(
+              onTap: () {
+                if (item.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Box ${index + 1} is empty. Add a song URL in main.dart!')),
+                  );
+                } else {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PlayerScreen(song: item),
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF181818),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: item.isEmpty ? const Color(0xFF282828) : Colors.deepPurple,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            item.isEmpty ? Icons.add_music_node : Icons.music_note,
+                            size: 48,
+                            color: item.isEmpty ? Colors.grey : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      item.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: item.isEmpty ? Colors.grey : Colors.white,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.artist,
+                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class PlayerScreen extends StatefulWidget {
+  final SongItem song;
+  const PlayerScreen({super.key, required this.song});
+
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen> {
+  late AudioPlayer _audioPlayer;
 
   @override
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _initAudioSession();
-    _listenToPlaybackState();
+    _initAudio();
   }
 
-  Future<void> _initAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
-
+  Future<void> _initAudio() async {
     try {
-      await _audioPlayer.setUrl(_currentSong.url);
+      await _audioPlayer.setUrl(widget.song.url);
+      _audioPlayer.play();
     } catch (e) {
-      debugPrint("Error loading audio source: $e");
-    }
-  }
-
-  void _listenToPlaybackState() {
-    _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-        });
-      }
-    });
-
-    _audioPlayer.durationStream.listen((newDuration) {
-      if (mounted && newDuration != null) {
-        setState(() {
-          _duration = newDuration;
-        });
-      }
-    });
-
-    _audioPlayer.positionStream.listen((newPosition) {
-      if (mounted) {
-        setState(() {
-          _position = newPosition;
-        });
-      }
-    });
-  }
-
-  void _togglePlayPause() async {
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.play();
+      debugPrint("Error streaming audio: $e");
     }
   }
 
@@ -98,99 +186,66 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.dispose();
   }
 
-  String _formatDuration(Duration duration) {
-    String minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    String seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return "$minutes:$seconds";
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
-        title: const Text("My Music App"),
-        backgroundColor: Colors.black,
+        leading: IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Playing from Playlist', style: TextStyle(fontSize: 14)),
         centerTitle: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            const Spacer(),
             Container(
-              width: 220,
-              height: 220,
+              height: 280,
               decoration: BoxDecoration(
-                color: Colors.grey[850],
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black54,
-                    blurRadius: 10,
-                    offset: Offset(0, 5),
-                  )
-                ],
+                color: Colors.deepPurple,
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.music_note,
-                size: 100,
-                color: Colors.white70,
+              child: const Center(
+                child: Icon(Icons.music_note, size: 100, color: Colors.white70),
               ),
             ),
-            const SizedBox(height: 30),
-            Text(
-              _currentSong.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
+            const Spacer(),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                widget.song.title,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              textAlign: TextAlign.center,
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                widget.song.artist,
+                style: const TextStyle(fontSize: 16, color: Colors.grey),
+              ),
             ),
             const SizedBox(height: 20),
-            Slider(
-              activeColor: Colors.deepPurpleAccent,
-              inactiveColor: Colors.white24,
-              min: 0.0,
-              max: _duration.inSeconds.toDouble() > 0
-                  ? _duration.inSeconds.toDouble()
-                  : 1.0,
-              value: _position.inSeconds
-                  .toDouble()
-                  .clamp(0.0, _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0),
-              onChanged: (value) async {
-                final newPosition = Duration(seconds: value.toInt());
-                await _audioPlayer.seek(newPosition);
+            StreamBuilder<PlayerState>(
+              stream: _audioPlayer.playerStateStream,
+              builder: (context, snapshot) {
+                final isPlaying = snapshot.data?.playing ?? false;
+                return IconButton(
+                  iconSize: 72,
+                  icon: Icon(isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill),
+                  onPressed: () {
+                    if (isPlaying) {
+                      _audioPlayer.pause();
+                    } else {
+                      _audioPlayer.play();
+                    }
+                  },
+                );
               },
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatDuration(_position),
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                  Text(
-                    _formatDuration(_duration),
-                    style: const TextStyle(color: Colors.white70),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 30),
-            CircleAvatar(
-              radius: 35,
-              backgroundColor: Colors.deepPurpleAccent,
-              child: IconButton(
-                iconSize: 40,
-                color: Colors.white,
-                icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-                onPressed: _togglePlayPause,
-              ),
-            ),
+            const Spacer(),
           ],
         ),
       ),
