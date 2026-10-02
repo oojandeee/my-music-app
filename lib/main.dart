@@ -199,7 +199,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Recent Searches (Limit 5)
           if (_recentSearches.isNotEmpty) ...[
             const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
@@ -216,7 +215,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             const SizedBox(height: 16),
           ],
 
-          // Search Results
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
@@ -298,7 +296,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- PLAYER SCREEN ---
+// --- PLAYER SCREEN (INSTANT PLAYBACK & STREAM FIX) ---
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
@@ -308,7 +306,7 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  late final AudioPlayer _audioPlayer;
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   bool _isLoadingAudio = true;
@@ -317,27 +315,67 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Fast-start buffering: Plays after 500ms buffered without downloading the full file
+    _audioPlayer = AudioPlayer(
+      audioLoadConfiguration: const AudioLoadConfiguration(
+        androidLoadControl: AndroidLoadControl(
+          minBufferMs: 1000,
+          maxBufferMs: 50000,
+          bufferForPlaybackMs: 500, // Starts immediately on 0.5s of buffer
+          bufferForPlaybackAfterRebufferMs: 1000,
+        ),
+        darwinLoadControl: DarwinLoadControl(
+          preferredForwardBufferDuration: Duration(seconds: 1),
+        ),
+      ),
+    );
+
     _loadAndPlayAudio();
   }
 
   Future<void> _loadAndPlayAudio() async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
-      final audioStreamInfo = manifest.audioOnly.withHighestBitrate();
 
-      final audioUrl = audioStreamInfo.url.toString();
-      await _audioPlayer.setUrl(audioUrl);
-      _audioPlayer.play();
+      yt_lib.StreamInfo? streamInfo;
+      if (manifest.audioOnly.isNotEmpty) {
+        streamInfo = manifest.audioOnly.withHighestBitrate();
+      } else if (manifest.muxed.isNotEmpty) {
+        streamInfo = manifest.muxed.withHighestBitrate();
+      }
+
+      if (streamInfo != null) {
+        final audioUrl = streamInfo.url.toString();
+
+        // 1. Prepare player to stream immediately
+        _audioPlayer.play();
+
+        // 2. Set Audio Source with User-Agent header so YouTube servers don't drop the connection
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(
+            Uri.parse(audioUrl),
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          ),
+          preload: true,
+        );
+
+        if (mounted) {
+          setState(() {
+            _isLoadingAudio = false;
+          });
+        }
+      } else {
+        throw Exception("No streamable audio found.");
+      }
     } catch (e) {
       debugPrint("Audio extraction error: $e");
       if (mounted) {
         setState(() {
           _errorMessage = "Unable to play track. Try another song.";
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
           _isLoadingAudio = false;
         });
       }
@@ -455,7 +493,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
                 builder: (context, snapshot) {
-                  final isPlaying = snapshot.data?.playing ?? false;
+                  final playerState = snapshot.data;
+                  final processingState = playerState?.processingState;
+                  final isPlaying = playerState?.playing ?? false;
+
+                  if (processingState == ProcessingState.buffering) {
+                    return const CircularProgressIndicator(color: Colors.purpleAccent);
+                  }
+
                   return IconButton(
                     iconSize: 72,
                     icon: Icon(
