@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 void main() {
@@ -311,7 +313,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- PLAYER SCREEN ---
+// --- PLAYER SCREEN WITH DETAILED ERROR DISPLAY UI ---
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
@@ -325,64 +327,80 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   bool _isLoadingAudio = true;
-  String _errorMessage = '';
+  String _rawError = '';
+  String _errorExplanation = '';
+  String _fixRequirement = '';
+  File? _tempAudioFile;
 
   @override
   void initState() {
     super.initState();
-
-    _audioPlayer = AudioPlayer(
-      audioLoadConfiguration: AudioLoadConfiguration(
-        androidLoadControl: AndroidLoadControl(
-          minBufferDuration: const Duration(milliseconds: 1000),
-          maxBufferDuration: const Duration(milliseconds: 50000),
-          bufferForPlaybackDuration: const Duration(milliseconds: 500),
-          bufferForPlaybackAfterRebufferDuration: const Duration(milliseconds: 1000),
-        ),
-        darwinLoadControl: const DarwinLoadControl(
-          preferredForwardBufferDuration: Duration(seconds: 1),
-        ),
-      ),
-    );
-
+    _audioPlayer = AudioPlayer();
     _loadAndPlayAudio();
   }
 
   Future<void> _loadAndPlayAudio() async {
     try {
-      debugPrint("Fetching manifest for Video ID: ${widget.song.id}");
-      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
+      if (mounted) {
+        setState(() {
+          _isLoadingAudio = true;
+          _rawError = '';
+          _errorExplanation = '';
+          _fixRequirement = '';
+        });
+      }
 
+      // 1. Fetch available streams from YouTube Explode
+      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
       final audioStreams = manifest.audioOnly;
 
-      if (audioStreams.isNotEmpty) {
-        final streamInfo = audioStreams.withHighestBitrate();
-        debugPrint("Selected audio bitrate: ${streamInfo.bitrate}");
-
-        // Pass StreamAudioSource instead of raw URL
-        final audioSource = YouTubeAudioSource(_yt, streamInfo);
-
-        await _audioPlayer.setAudioSource(audioSource);
-        _audioPlayer.play();
-
-        if (mounted) {
-          setState(() {
-            _isLoadingAudio = false;
-          });
-        }
-      } else {
-        throw Exception("No audio streams available for this track.");
+      if (audioStreams.isEmpty) {
+        throw Exception("No valid audio streams found for this track.");
       }
-    } catch (e, stackTrace) {
-      debugPrint("=== ROOT AUDIO ERROR ===");
-      debugPrint(e.toString());
-      debugPrint(stackTrace.toString());
-      debugPrint("========================");
+
+      // 2. Select highest quality audio stream
+      final streamInfo = audioStreams.withHighestBitrate();
+
+      // 3. Download stream to local cache directory via Dart HTTP client
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/${widget.song.id}.m4a';
+      _tempAudioFile = File(filePath);
+
+      if (!await _tempAudioFile!.exists()) {
+        final stream = _yt.videos.streamsClient.get(streamInfo);
+        final fileStream = _tempAudioFile!.openWrite();
+        await stream.pipe(fileStream);
+        await fileStream.flush();
+        await fileStream.close();
+      }
+
+      // 4. Play directly from local storage file
+      await _audioPlayer.setFilePath(_tempAudioFile!.path);
+      _audioPlayer.play();
 
       if (mounted) {
         setState(() {
-          _errorMessage = "Playback Error: $e";
           _isLoadingAudio = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Detailed Audio Extraction Error: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingAudio = false;
+          _rawError = e.toString();
+
+          if (e.toString().contains("Source error") || e.toString().contains("403")) {
+            _errorExplanation =
+                "YouTube blocked ExoPlayer's direct network request to the audio stream URL.";
+            _fixRequirement =
+                "Download the audio stream into a local device file via path_provider before passing it to just_audio.";
+          } else {
+            _errorExplanation =
+                "Failed to process or stream the requested media track.";
+            _fixRequirement =
+                "Ensure your device has an active internet connection and that path_provider is properly configured in pubspec.yaml.";
+          }
         });
       }
     }
@@ -392,6 +410,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _yt.close();
     _audioPlayer.dispose();
+    if (_tempAudioFile != null && _tempAudioFile!.existsSync()) {
+      _tempAudioFile!.delete();
+    }
     super.dispose();
   }
 
@@ -423,12 +444,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
               borderRadius: BorderRadius.circular(12),
               child: Image.network(
                 widget.song.thumbnailUrl,
-                height: 260,
-                width: 260,
+                height: 240,
+                width: 240,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Container(
-                  height: 260,
-                  width: 260,
+                  height: 240,
+                  width: 240,
                   color: Colors.purpleAccent,
                   child: const Icon(Icons.music_note, size: 100, color: Colors.white),
                 ),
@@ -438,26 +459,64 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Text(
               widget.song.title,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 8),
             Text(
               widget.song.artist,
-              style: const TextStyle(color: Colors.grey, fontSize: 16),
+              style: const TextStyle(color: Colors.grey, fontSize: 14),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
             if (_isLoadingAudio)
-              const CircularProgressIndicator(color: Colors.purpleAccent)
-            else if (_errorMessage.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Text(
-                  _errorMessage,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                  textAlign: TextAlign.center,
+              const Column(
+                children: [
+                  CircularProgressIndicator(color: Colors.purpleAccent),
+                  SizedBox(height: 12),
+                  Text('Buffering stream securely...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              )
+            else if (_rawError.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF221515),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                          SizedBox(width: 6),
+                          Text(
+                            "Playback Failure Detected",
+                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Brief Explanation:\n$_errorExplanation",
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Required Fix:\n$_fixRequirement",
+                        style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Technical Error Log:\n$_rawError",
+                        style: const TextStyle(color: Colors.grey, fontSize: 10, fontFamily: 'monospace'),
+                      ),
+                    ],
+                  ),
                 ),
               )
             else ...[
@@ -501,7 +560,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 },
               ),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
 
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
@@ -515,7 +574,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   }
 
                   return IconButton(
-                    iconSize: 72,
+                    iconSize: 64,
                     icon: Icon(
                       isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
                       color: Colors.purpleAccent,
@@ -535,26 +594,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// --- CUSTOM STREAM SOURCE FOR JUST_AUDIO ---
-class YouTubeAudioSource extends StreamAudioSource {
-  final yt_lib.YoutubeExplode yt;
-  final yt_lib.AudioStreamInfo streamInfo;
-
-  YouTubeAudioSource(this.yt, this.streamInfo);
-
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    final stream = yt.videos.streamsClient.get(streamInfo);
-    return StreamAudioResponse(
-      sourceLength: streamInfo.size.totalBytes,
-      contentLength: streamInfo.size.totalBytes,
-      offset: start ?? 0,
-      stream: stream,
-      contentType: 'audio/mp4',
     );
   }
 }
