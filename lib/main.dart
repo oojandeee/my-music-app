@@ -112,13 +112,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _buildEmptyTab('PREMIUM'),
     ];
 
-    // INTERCEPT SYSTEM BACK BUTTON TO PREVENT ACCIDENTAL CLOSING
+    // INTERCEPT SYSTEM BACK BUTTON TO PREVENT ACCIDENTAL APP CLOSING
     return PopScope(
       canPop: _currentIndex == 1 && _searchResults.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
-        // If in search tab with active results, clear search first
+        // If in search tab with active results, clear search results first
         if (_currentIndex == 1 && _searchResults.isNotEmpty) {
           setState(() {
             _searchResults.clear();
@@ -358,30 +358,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
 
-      // Try extraction methods
-      yt_lib.StreamInfo? streamInfo;
-      if (manifest.audioOnly.isNotEmpty) {
-        streamInfo = manifest.audioOnly.withHighestBitrate();
-      } else if (manifest.muxed.isNotEmpty) {
-        streamInfo = manifest.muxed.withHighestBitrate();
-      }
+      // Filter directly for audio streams
+      final audioStreams = manifest.audioOnly;
 
-      if (streamInfo != null) {
+      if (audioStreams.isNotEmpty) {
+        // Pick the highest bitrate stream (m4a format naturally parsed by ExoPlayer)
+        final streamInfo = audioStreams.withHighestBitrate();
         final audioUrl = streamInfo.url.toString();
 
+        // setUrl bypasses broken header maps on native Android ExoPlayer
+        await _audioPlayer.setUrl(audioUrl);
         _audioPlayer.play();
-
-        // Pass direct stream with explicitly set headers
-        await _audioPlayer.setAudioSource(
-          AudioSource.uri(
-            Uri.parse(audioUrl),
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            },
-          ),
-          preload: true,
-        );
 
         if (mounted) {
           setState(() {
@@ -389,13 +376,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
           });
         }
       } else {
-        throw Exception("No streamable audio stream found in manifest.");
+        throw Exception("No audio streams found for this track.");
       }
     } catch (e) {
-      debugPrint("Audio extraction exception details: $e");
+      debugPrint("Audio extraction error: $e");
       if (mounted) {
         setState(() {
-          // EXPOSE EXACT ERROR EXCEPTION ON SCREEN
           _errorMessage = e.toString();
           _isLoadingAudio = false;
         });
