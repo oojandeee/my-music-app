@@ -112,21 +112,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _buildEmptyTab('PREMIUM'),
     ];
 
-    // INTERCEPT SYSTEM BACK BUTTON TO PREVENT ACCIDENTAL APP CLOSING
     return PopScope(
       canPop: _currentIndex == 1 && _searchResults.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
-        // If in search tab with active results, clear search results first
         if (_currentIndex == 1 && _searchResults.isNotEmpty) {
           setState(() {
             _searchResults.clear();
             _searchController.clear();
           });
-        } 
-        // If in any other tab, return to SEARCH tab
-        else if (_currentIndex != 1) {
+        } else if (_currentIndex != 1) {
           setState(() {
             _currentIndex = 1;
           });
@@ -358,16 +354,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
 
-      // Filter directly for audio streams
       final audioStreams = manifest.audioOnly;
 
       if (audioStreams.isNotEmpty) {
-        // Pick the highest bitrate stream (m4a format naturally parsed by ExoPlayer)
         final streamInfo = audioStreams.withHighestBitrate();
-        final audioUrl = streamInfo.url.toString();
+        final audioUrl = streamInfo.url;
 
-        // setUrl bypasses broken header maps on native Android ExoPlayer
-        await _audioPlayer.setUrl(audioUrl);
+        // Using AudioSource.uri with explicit User-Agent header
+        final audioSource = AudioSource.uri(
+          audioUrl,
+          headers: {
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          },
+        );
+
+        await _audioPlayer.setAudioSource(audioSource);
         _audioPlayer.play();
 
         if (mounted) {
