@@ -313,7 +313,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- INSTANT FAST-STREAMING PLAYER SCREEN ---
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
@@ -324,18 +323,10 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   late final AudioPlayer _audioPlayer;
+  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   bool _isLoadingAudio = true;
   String _rawError = '';
-  String _errorExplanation = '';
-  String _fixRequirement = '';
-
-  // Public Invidious instances that proxy audio directly without blocking
-  final List<String> _proxyInstances = [
-    'https://inv.riverside.rocks',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.flokinet.to',
-  ];
 
   @override
   void initState() {
@@ -354,39 +345,49 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     String? audioUrl;
 
-    // Fast resolution: Query Invidious API for proxy audio URL
-    for (String instance in _proxyInstances) {
-      try {
-        final response = await http
-            .get(Uri.parse('$instance/api/v1/videos/${widget.song.id}'))
-            .timeout(const Duration(seconds: 4));
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
+      final audioOnly = manifest.audioOnly;
+      if (audioOnly.isNotEmpty) {
+        audioUrl = audioOnly.withHighestBitrate().url.toString();
+      }
+    } catch (e) {
+      debugPrint("YoutubeExplode failed, attempting fallback proxies: $e");
+    }
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final adaptiveFormats = data['adaptiveFormats'] as List?;
+    if (audioUrl == null || audioUrl.isEmpty) {
+      final pipedInstances = [
+        'https://pipedapi.kavin.rocks',
+        'https://api.piped.privacydev.net',
+        'https://pipedapi.mha.fi'
+      ];
 
-          if (adaptiveFormats != null) {
-            final audioStreams = adaptiveFormats.where((f) {
-              final type = f['type']?.toString() ?? '';
-              return type.contains('audio');
-            }).toList();
-
-            if (audioStreams.isNotEmpty) {
+      for (String instance in pipedInstances) {
+        try {
+          final res = await http.get(Uri.parse('$instance/streams/${widget.song.id}')).timeout(const Duration(seconds: 3));
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            final audioStreams = data['audioStreams'] as List?;
+            if (audioStreams != null && audioStreams.isNotEmpty) {
               audioUrl = audioStreams.first['url'] as String?;
               if (audioUrl != null && audioUrl.isNotEmpty) break;
             }
           }
-        }
-      } catch (e) {
-        debugPrint("Instance $instance timed out or failed: $e");
+        } catch (_) {}
       }
     }
 
-    // Fallback URL if proxy query fails
-    audioUrl ??= 'https://inv.riverside.rocks/latest_version?id=${widget.song.id}&itag=140';
+    if (audioUrl == null || audioUrl.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isLoadingAudio = false;
+          _rawError = "Could not fetch audio stream URL. Please try again later.";
+        });
+      }
+      return;
+    }
 
     try {
-      // Stream audio directly into ExoPlayer instantly
       await _audioPlayer.setUrl(audioUrl);
       _audioPlayer.play();
 
@@ -400,8 +401,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         setState(() {
           _isLoadingAudio = false;
           _rawError = e.toString();
-          _errorExplanation = "ExoPlayer failed to connect to the stream source.";
-          _fixRequirement = "Verify your internet connection and check if HTTP requests are permitted in AndroidManifest.xml.";
         });
       }
     }
@@ -409,6 +408,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _yt.close();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -472,7 +472,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   CircularProgressIndicator(color: Colors.purpleAccent),
                   SizedBox(height: 12),
-                  Text('Loading stream directly...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text('Fetching stream...', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               )
             else if (_rawError.isNotEmpty)
@@ -483,37 +483,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
                 ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
-                          SizedBox(width: 6),
-                          Text(
-                            "Playback Failure Detected",
-                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Brief Explanation:\n$_errorExplanation",
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Required Fix:\n$_fixRequirement",
-                        style: const TextStyle(color: Colors.greenAccent, fontSize: 12),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Technical Error Log:\n$_rawError",
-                        style: const TextStyle(color: Colors.grey, fontSize: 10, fontFamily: 'monospace'),
-                      ),
-                    ],
-                  ),
+                child: Text(
+                  _rawError,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                 ),
               )
             else ...[
