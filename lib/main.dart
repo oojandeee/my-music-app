@@ -296,7 +296,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- PLAYER SCREEN (INSTANT PLAYBACK & STREAM FIX) ---
+// --- PLAYER SCREEN ---
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
@@ -316,16 +316,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
 
-    // Fast-start buffering: Plays after 500ms buffered without downloading the full file
+    // Fast-start buffering configured with proper Duration objects for just_audio 0.9.46
     _audioPlayer = AudioPlayer(
-      audioLoadConfiguration: const AudioLoadConfiguration(
+      audioLoadConfiguration: AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferMs: 1000,
-          maxBufferMs: 50000,
-          bufferForPlaybackMs: 500, // Starts immediately on 0.5s of buffer
-          bufferForPlaybackAfterRebufferMs: 1000,
+          minBufferDuration: const Duration(milliseconds: 1000),
+          maxBufferDuration: const Duration(milliseconds: 50000),
+          bufferForPlaybackDuration: const Duration(milliseconds: 500),
+          bufferForPlaybackAfterRebufferDuration: const Duration(milliseconds: 1000),
         ),
-        darwinLoadControl: DarwinLoadControl(
+        darwinLoadControl: const DarwinLoadControl(
           preferredForwardBufferDuration: Duration(seconds: 1),
         ),
       ),
@@ -348,10 +348,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (streamInfo != null) {
         final audioUrl = streamInfo.url.toString();
 
-        // 1. Prepare player to stream immediately
         _audioPlayer.play();
 
-        // 2. Set Audio Source with User-Agent header so YouTube servers don't drop the connection
         await _audioPlayer.setAudioSource(
           AudioSource.uri(
             Uri.parse(audioUrl),
