@@ -1,7 +1,7 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 void main() {
@@ -313,7 +313,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-// --- PLAYER SCREEN WITH DETAILED ERROR DISPLAY UI ---
+// --- INSTANT FAST-STREAMING PLAYER SCREEN ---
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
   const PlayerScreen({super.key, required this.song});
@@ -324,13 +324,18 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   late final AudioPlayer _audioPlayer;
-  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   bool _isLoadingAudio = true;
   String _rawError = '';
   String _errorExplanation = '';
   String _fixRequirement = '';
-  File? _tempAudioFile;
+
+  // Public Invidious instances that proxy audio directly without blocking
+  final List<String> _proxyInstances = [
+    'https://inv.riverside.rocks',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.flokinet.to',
+  ];
 
   @override
   void initState() {
@@ -340,42 +345,49 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _loadAndPlayAudio() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingAudio = true;
+        _rawError = '';
+      });
+    }
+
+    String? audioUrl;
+
+    // Fast resolution: Query Invidious API for proxy audio URL
+    for (String instance in _proxyInstances) {
+      try {
+        final response = await http
+            .get(Uri.parse('$instance/api/v1/videos/${widget.song.id}'))
+            .timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final adaptiveFormats = data['adaptiveFormats'] as List?;
+
+          if (adaptiveFormats != null) {
+            final audioStreams = adaptiveFormats.where((f) {
+              final type = f['type']?.toString() ?? '';
+              return type.contains('audio');
+            }).toList();
+
+            if (audioStreams.isNotEmpty) {
+              audioUrl = audioStreams.first['url'] as String?;
+              if (audioUrl != null && audioUrl.isNotEmpty) break;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("Instance $instance timed out or failed: $e");
+      }
+    }
+
+    // Fallback URL if proxy query fails
+    audioUrl ??= 'https://inv.riverside.rocks/latest_version?id=${widget.song.id}&itag=140';
+
     try {
-      if (mounted) {
-        setState(() {
-          _isLoadingAudio = true;
-          _rawError = '';
-          _errorExplanation = '';
-          _fixRequirement = '';
-        });
-      }
-
-      // 1. Fetch available streams from YouTube Explode
-      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
-      final audioStreams = manifest.audioOnly;
-
-      if (audioStreams.isEmpty) {
-        throw Exception("No valid audio streams found for this track.");
-      }
-
-      // 2. Select highest quality audio stream
-      final streamInfo = audioStreams.withHighestBitrate();
-
-      // 3. Download stream to local cache directory via Dart HTTP client
-      final tempDir = await getTemporaryDirectory();
-      final filePath = '${tempDir.path}/${widget.song.id}.m4a';
-      _tempAudioFile = File(filePath);
-
-      if (!await _tempAudioFile!.exists()) {
-        final stream = _yt.videos.streamsClient.get(streamInfo);
-        final fileStream = _tempAudioFile!.openWrite();
-        await stream.pipe(fileStream);
-        await fileStream.flush();
-        await fileStream.close();
-      }
-
-      // 4. Play directly from local storage file
-      await _audioPlayer.setFilePath(_tempAudioFile!.path);
+      // Stream audio directly into ExoPlayer instantly
+      await _audioPlayer.setUrl(audioUrl);
       _audioPlayer.play();
 
       if (mounted) {
@@ -384,23 +396,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Detailed Audio Extraction Error: $e");
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
           _rawError = e.toString();
-
-          if (e.toString().contains("Source error") || e.toString().contains("403")) {
-            _errorExplanation =
-                "YouTube blocked ExoPlayer's direct network request to the audio stream URL.";
-            _fixRequirement =
-                "Download the audio stream into a local device file via path_provider before passing it to just_audio.";
-          } else {
-            _errorExplanation =
-                "Failed to process or stream the requested media track.";
-            _fixRequirement =
-                "Ensure your device has an active internet connection and that path_provider is properly configured in pubspec.yaml.";
-          }
+          _errorExplanation = "ExoPlayer failed to connect to the stream source.";
+          _fixRequirement = "Verify your internet connection and check if HTTP requests are permitted in AndroidManifest.xml.";
         });
       }
     }
@@ -408,11 +409,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    _yt.close();
     _audioPlayer.dispose();
-    if (_tempAudioFile != null && _tempAudioFile!.existsSync()) {
-      _tempAudioFile!.delete();
-    }
     super.dispose();
   }
 
@@ -475,7 +472,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   CircularProgressIndicator(color: Colors.purpleAccent),
                   SizedBox(height: 12),
-                  Text('Buffering stream securely...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text('Loading stream directly...', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               )
             else if (_rawError.isNotEmpty)
