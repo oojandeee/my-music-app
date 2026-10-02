@@ -112,18 +112,39 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _buildEmptyTab('PREMIUM'),
     ];
 
-    return Scaffold(
-      body: SafeArea(child: pages[_currentIndex]),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'HOME'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'SEARCH'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: 'CREATE'),
-          BottomNavigationBarItem(icon: Icon(Icons.workspace_premium), label: 'PREMIUM'),
-        ],
+    // INTERCEPT SYSTEM BACK BUTTON TO PREVENT ACCIDENTAL CLOSING
+    return PopScope(
+      canPop: _currentIndex == 1 && _searchResults.isEmpty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        // If in search tab with active results, clear search first
+        if (_currentIndex == 1 && _searchResults.isNotEmpty) {
+          setState(() {
+            _searchResults.clear();
+            _searchController.clear();
+          });
+        } 
+        // If in any other tab, return to SEARCH tab
+        else if (_currentIndex != 1) {
+          setState(() {
+            _currentIndex = 1;
+          });
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(child: pages[_currentIndex]),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          type: BottomNavigationBarType.fixed,
+          onTap: (index) => setState(() => _currentIndex = index),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'HOME'),
+            BottomNavigationBarItem(icon: Icon(Icons.search), label: 'SEARCH'),
+            BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: 'CREATE'),
+            BottomNavigationBarItem(icon: Icon(Icons.workspace_premium), label: 'PREMIUM'),
+          ],
+        ),
       ),
     );
   }
@@ -316,7 +337,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
 
-    // Fast-start buffering configured with proper Duration objects for just_audio 0.9.46
     _audioPlayer = AudioPlayer(
       audioLoadConfiguration: AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
@@ -338,6 +358,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
 
+      // Try extraction methods
       yt_lib.StreamInfo? streamInfo;
       if (manifest.audioOnly.isNotEmpty) {
         streamInfo = manifest.audioOnly.withHighestBitrate();
@@ -350,6 +371,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
         _audioPlayer.play();
 
+        // Pass direct stream with explicitly set headers
         await _audioPlayer.setAudioSource(
           AudioSource.uri(
             Uri.parse(audioUrl),
@@ -367,13 +389,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
           });
         }
       } else {
-        throw Exception("No streamable audio found.");
+        throw Exception("No streamable audio stream found in manifest.");
       }
     } catch (e) {
-      debugPrint("Audio extraction error: $e");
+      debugPrint("Audio extraction exception details: $e");
       if (mounted) {
         setState(() {
-          _errorMessage = "Unable to play track. Try another song.";
+          // EXPOSE EXACT ERROR EXCEPTION ON SCREEN
+          _errorMessage = e.toString();
           _isLoadingAudio = false;
         });
       }
@@ -444,7 +467,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
             if (_isLoadingAudio)
               const CircularProgressIndicator(color: Colors.purpleAccent)
             else if (_errorMessage.isNotEmpty)
-              Text(_errorMessage, style: const TextStyle(color: Colors.redAccent))
+              Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Text(
+                  _errorMessage,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              )
             else ...[
               StreamBuilder<Duration>(
                 stream: _audioPlayer.positionStream,
