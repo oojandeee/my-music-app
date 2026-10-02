@@ -53,7 +53,7 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 1; // Default to SEARCH tab
+  int _currentIndex = 1;
 
   final TextEditingController _searchController = TextEditingController();
   final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
@@ -145,7 +145,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  // --- HOME TAB ---
   Widget _buildHomeTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,7 +192,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     );
   }
 
-  // --- SEARCH TAB ---
   Widget _buildSearchTab() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -352,22 +350,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _loadAndPlayAudio() async {
     try {
+      debugPrint("Fetching manifest for Video ID: ${widget.song.id}");
       final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
 
       final audioStreams = manifest.audioOnly;
 
       if (audioStreams.isNotEmpty) {
         final streamInfo = audioStreams.withHighestBitrate();
-        final audioUrl = streamInfo.url;
+        debugPrint("Selected audio bitrate: ${streamInfo.bitrate}");
 
-        // Using AudioSource.uri with explicit User-Agent header
-        final audioSource = AudioSource.uri(
-          audioUrl,
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          },
-        );
+        // Pass StreamAudioSource instead of raw URL
+        final audioSource = YouTubeAudioSource(_yt, streamInfo);
 
         await _audioPlayer.setAudioSource(audioSource);
         _audioPlayer.play();
@@ -378,13 +371,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
           });
         }
       } else {
-        throw Exception("No audio streams found for this track.");
+        throw Exception("No audio streams available for this track.");
       }
-    } catch (e) {
-      debugPrint("Audio extraction error: $e");
+    } catch (e, stackTrace) {
+      debugPrint("=== ROOT AUDIO ERROR ===");
+      debugPrint(e.toString());
+      debugPrint(stackTrace.toString());
+      debugPrint("========================");
+
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _errorMessage = "Playback Error: $e";
           _isLoadingAudio = false;
         });
       }
@@ -538,6 +535,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// --- CUSTOM STREAM SOURCE FOR JUST_AUDIO ---
+class YouTubeAudioSource extends StreamAudioSource {
+  final yt_lib.YoutubeExplode yt;
+  final yt_lib.AudioStreamInfo streamInfo;
+
+  YouTubeAudioSource(this.yt, this.streamInfo);
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    final stream = yt.videos.streamsClient.get(streamInfo);
+    return StreamAudioResponse(
+      sourceLength: streamInfo.size.totalBytes,
+      contentLength: streamInfo.size.totalBytes,
+      offset: start ?? 0,
+      stream: stream,
+      contentType: 'audio/mp4',
     );
   }
 }
