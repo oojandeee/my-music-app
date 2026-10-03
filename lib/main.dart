@@ -1,70 +1,3 @@
-import 'dart0:convert';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:just_audio/just_audio.dart';
-
-void main() {
-  runApp(const MyMusicApp());
-}
-
-class MyMusicApp extends StatelessWidget {
-  const MyMusicApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Music App',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF121212),
-          elevation: 0,
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF121212),
-          selectedItemColor: Colors.purpleAccent,
-          unselectedItemColor: Colors.grey,
-        ),
-      ),
-      home: const MainNavigationScreen(),
-    );
-  }
-}
-
-class OnlineSong {
-  final String id;
-  final String title;
-  final String artist;
-  final String thumbnailUrl;
-  final String streamUrl;
-
-  OnlineSong({
-    required this.id,
-    required this.title,
-    required this.artist,
-    required this.thumbnailUrl,
-    required this.streamUrl,
-  });
-}
-
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
-
-  @override
-  State<MainNavigationScreenThe reason your app shows an empty screen immediately after searching is due to two critical issues in the code:
-
-1. **Missing Exception & Status Check Handlers:** When the API fails or returns unexpected JSON keys, the `catch` block executes and immediately sets `_isLoading = false` without populating `_searchResults`. Because `_searchResults` stays empty, Flutter falls back to showing the "Browse Categories" screen instead of showing the error message or song list.
-2. **API Endpoint JSON Structure Mismatch:** The endpoint (`saavn.dev`) returns nested structures (`data['results']` or `data['data']['results']`) depending on server routing. If key extraction fails, `loadedSongs` remains empty.
-
-The updated `lib/main.dart` implementation below fixes both issues:
-* **Multi-endpoint Fallback System:** Tries `saavn.dev` first; if it returns no results, it automatically queries a backup API (`saavn.me`).
-* **Visual Error Banner & Debugging Output:** If an API fails or no songs are found, it displays a red warning banner explaining what happened rather than reverting to an empty screen.
-* **Flexible JSON Parsing:** Handles string/list variations for song titles, images, and audio URLs.
-
-Replace the contents of your `lib/main.dart` file on GitHub with this code:
-
-```dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -148,9 +81,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     List<OnlineSong> loadedSongs = [];
 
-    // Try Primary API
+    // Primary API Request
     try {
-      final primaryUrl = Uri.parse('[https://saavn.dev/api/search/songs?query=$](https://saavn.dev/api/search/songs?query=$){Uri.encodeComponent(query)}&limit=20');
+      final primaryUrl = Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
       final response = await http.get(primaryUrl).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
@@ -167,10 +100,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       debugPrint('Primary API Error: $e');
     }
 
-    // Try Secondary API if primary produced no results
+    // Fallback API Request
     if (loadedSongs.isEmpty) {
       try {
-        final backupUrl = Uri.parse('[https://saavn.me/search/songs?query=$](https://saavn.me/search/songs?query=$){Uri.encodeComponent(query)}&limit=20');
+        final backupUrl = Uri.parse('https://saavn.me/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
         final response = await http.get(backupUrl).timeout(const Duration(seconds: 8));
 
         if (response.statusCode == 200) {
@@ -204,14 +137,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     for (var item in results) {
       if (item is! Map) continue;
 
-      // Extract Title
       String title = (item['name'] ?? item['title'] ?? item['song'] ?? 'Unknown Track')
           .toString()
           .replaceAll('&quot;', '"')
           .replaceAll('&#039;', "'")
           .replaceAll('&amp;', '&');
 
-      // Extract Thumbnail
       String imgUrl = '';
       if (item['image'] is List && (item['image'] as List).isNotEmpty) {
         imgUrl = (item['image'] as List).last['url'] ?? (item['image'] as List).last['link'] ?? '';
@@ -219,7 +150,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         imgUrl = item['image'];
       }
 
-      // Extract Download/Stream URL
       String downloadUrl = '';
       if (item['downloadUrl'] is List && (item['downloadUrl'] as List).isNotEmpty) {
         downloadUrl = (item['downloadUrl'] as List).last['url'] ?? (item['downloadUrl'] as List).last['link'] ?? '';
@@ -229,7 +159,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         downloadUrl = item['url'];
       }
 
-      // Extract Artist
       String artistName = 'Unknown Artist';
       if (item['artists'] != null && item['artists']['primary'] is List) {
         final primaryList = item['artists']['primary'] as List;
