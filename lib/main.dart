@@ -81,10 +81,19 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     List<OnlineSong> loadedSongs = [];
 
-    // Primary API Request
+    // Source 1: Saavn Endpoint with Browser User-Agent Header
     try {
-      final primaryUrl = Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
-      final response = await http.get(primaryUrl).timeout(const Duration(seconds: 8));
+      final saavnUrl = Uri.parse(
+        'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
+      );
+      final response = await http.get(
+        saavnUrl,
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 6));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -93,31 +102,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             : (data['results'] ?? data['data']);
 
         if (results is List) {
-          loadedSongs = _parseResults(results);
+          loadedSongs = _parseSaavnResults(results);
         }
       }
     } catch (e) {
-      debugPrint('Primary API Error: $e');
+      debugPrint('Saavn API failed: $e');
     }
 
-    // Fallback API Request
+    // Source 2: iTunes Search API (100% reliable fallback)
     if (loadedSongs.isEmpty) {
       try {
-        final backupUrl = Uri.parse('https://saavn.me/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
-        final response = await http.get(backupUrl).timeout(const Duration(seconds: 8));
+        final itunesUrl = Uri.parse(
+          'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25',
+        );
+        final response = await http.get(itunesUrl).timeout(const Duration(seconds: 6));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          final results = (data['data'] != null && data['data']['results'] != null)
-              ? data['data']['results']
-              : (data['results'] ?? data['data']);
-
-          if (results is List) {
-            loadedSongs = _parseResults(results);
+          if (data['results'] is List) {
+            loadedSongs = _parseITunesResults(data['results']);
           }
         }
       } catch (e) {
-        debugPrint('Backup API Error: $e');
+        debugPrint('iTunes API failed: $e');
       }
     }
 
@@ -126,12 +133,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       if (loadedSongs.isNotEmpty) {
         _searchResults = loadedSongs;
       } else {
-        _errorMessage = 'No playable tracks found for "$query". Please check your connection or try another search.';
+        _errorMessage =
+            'No playable tracks found for "$query". Please check your connection or try another search.';
       }
     });
   }
 
-  List<OnlineSong> _parseResults(List results) {
+  List<OnlineSong> _parseSaavnResults(List results) {
     final List<OnlineSong> parsed = [];
 
     for (var item in results) {
@@ -152,23 +160,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
       String downloadUrl = '';
       if (item['downloadUrl'] is List && (item['downloadUrl'] as List).isNotEmpty) {
-        downloadUrl = (item['downloadUrl'] as List).last['url'] ?? (item['downloadUrl'] as List).last['link'] ?? '';
+        downloadUrl = (item['downloadUrl'] as List).last['url'] ??
+            (item['downloadUrl'] as List).last['link'] ??
+            '';
       } else if (item['media_url'] is String) {
         downloadUrl = item['media_url'];
-      } else if (item['url'] is String && item['url'].toString().endsWith('.mp3')) {
-        downloadUrl = item['url'];
       }
 
       String artistName = 'Unknown Artist';
       if (item['artists'] != null && item['artists']['primary'] is List) {
         final primaryList = item['artists']['primary'] as List;
         if (primaryList.isNotEmpty) {
-          artistName = primaryList.map((e) => e['name'] ?? '').where((n) => n.toString().isNotEmpty).join(', ');
+          artistName = primaryList
+              .map((e) => e['name'] ?? '')
+              .where((n) => n.toString().isNotEmpty)
+              .join(', ');
         }
       } else if (item['primary_artists'] is String) {
         artistName = item['primary_artists'];
-      } else if (item['singers'] is String) {
-        artistName = item['singers'];
       }
 
       if (downloadUrl.isNotEmpty) {
@@ -182,6 +191,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         );
       }
+    }
+
+    return parsed;
+  }
+
+  List<OnlineSong> _parseITunesResults(List results) {
+    final List<OnlineSong> parsed = [];
+
+    for (var item in results) {
+      if (item is! Map) continue;
+
+      final previewUrl = item['previewUrl']?.toString() ?? '';
+      if (previewUrl.isEmpty) continue;
+
+      final artworkUrl = (item['artworkUrl100'] ?? item['artworkUrl60'] ?? '')
+          .toString()
+          .replaceAll('100x100bb', '300x300bb');
+
+      parsed.add(
+        OnlineSong(
+          id: item['trackId']?.toString() ?? UniqueKey().toString(),
+          title: item['trackName']?.toString() ?? 'Unknown Track',
+          artist: item['artistName']?.toString() ?? 'Unknown Artist',
+          thumbnailUrl: artworkUrl,
+          streamUrl: previewUrl,
+        ),
+      );
     }
 
     return parsed;
@@ -250,7 +286,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: 29,
+            itemCount: 10,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               crossAxisSpacing: 12,
@@ -395,7 +431,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              const Text('Browse Categories',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                               const SizedBox(height: 12),
                               Expanded(
                                 child: GridView.builder(
@@ -415,7 +452,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                       child: Center(
                                         child: Text(
                                           'Category ${index + 1}',
-                                          style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                                          style: const TextStyle(
+                                              color: Colors.grey, fontWeight: FontWeight.bold),
                                         ),
                                       ),
                                     );
@@ -553,7 +591,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF221515),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
                 ),
                 child: Text(
                   _rawError,
@@ -567,12 +605,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   final position = snapshot.data ?? Duration.zero;
                   final duration = _audioPlayer.duration ?? Duration.zero;
 
-                  final maxMilliseconds = duration.inMilliseconds > 0
-                      ? duration.inMilliseconds.toDouble()
-                      : 1.0;
-                  final currentMilliseconds = position.inMilliseconds
-                      .toDouble()
-                      .clamp(0.0, maxMilliseconds);
+                  final maxMilliseconds =
+                      duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0;
+                  final currentMilliseconds =
+                      position.inMilliseconds.toDouble().clamp(0.0, maxMilliseconds);
 
                   return Column(
                     children: [
@@ -591,8 +627,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(_formatDuration(position), style: const TextStyle(color: Colors.grey)),
-                            Text(_formatDuration(duration), style: const TextStyle(color: Colors.grey)),
+                            Text(_formatDuration(position),
+                                style: const TextStyle(color: Colors.grey)),
+                            Text(_formatDuration(duration),
+                                style: const TextStyle(color: Colors.grey)),
                           ],
                         ),
                       ),
@@ -600,9 +638,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   );
                 },
               ),
-
               const SizedBox(height: 8),
-
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
                 builder: (context, snapshot) {
