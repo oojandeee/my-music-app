@@ -2,8 +2,16 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_session/audio_session.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.example.music_app.channel.audio',
+    androidNotificationChannelName: 'Music Playback',
+    androidNotificationOngoing: true,
+  );
   runApp(const MyMusicApp());
 }
 
@@ -81,10 +89,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     List<OnlineSong> loadedSongs = [];
 
-    // Source 1: Saavn Endpoint with Browser User-Agent Header
     try {
       final saavnUrl = Uri.parse(
-        'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
+        'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=30',
       );
       final response = await http.get(
         saavnUrl,
@@ -93,7 +100,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
           'Accept': 'application/json',
         },
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -102,30 +109,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             : (data['results'] ?? data['data']);
 
         if (results is List) {
-          loadedSongs = _parseSaavnResults(results);
+          loadedSongs = _parseFullSongs(results);
         }
       }
     } catch (e) {
-      debugPrint('Saavn API failed: $e');
-    }
-
-    // Source 2: iTunes Search API (100% reliable fallback)
-    if (loadedSongs.isEmpty) {
-      try {
-        final itunesUrl = Uri.parse(
-          'https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25',
-        );
-        final response = await http.get(itunesUrl).timeout(const Duration(seconds: 6));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          if (data['results'] is List) {
-            loadedSongs = _parseITunesResults(data['results']);
-          }
-        }
-      } catch (e) {
-        debugPrint('iTunes API failed: $e');
-      }
+      debugPrint('Search error: $e');
     }
 
     setState(() {
@@ -134,12 +122,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         _searchResults = loadedSongs;
       } else {
         _errorMessage =
-            'No playable tracks found for "$query". Please check your connection or try another search.';
+            'No tracks found for "$query". Check your network connection and retry.';
       }
     });
   }
 
-  List<OnlineSong> _parseSaavnResults(List results) {
+  List<OnlineSong> _parseFullSongs(List results) {
     final List<OnlineSong> parsed = [];
 
     for (var item in results) {
@@ -191,33 +179,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
         );
       }
-    }
-
-    return parsed;
-  }
-
-  List<OnlineSong> _parseITunesResults(List results) {
-    final List<OnlineSong> parsed = [];
-
-    for (var item in results) {
-      if (item is! Map) continue;
-
-      final previewUrl = item['previewUrl']?.toString() ?? '';
-      if (previewUrl.isEmpty) continue;
-
-      final artworkUrl = (item['artworkUrl100'] ?? item['artworkUrl60'] ?? '')
-          .toString()
-          .replaceAll('100x100bb', '300x300bb');
-
-      parsed.add(
-        OnlineSong(
-          id: item['trackId']?.toString() ?? UniqueKey().toString(),
-          title: item['trackName']?.toString() ?? 'Unknown Track',
-          artist: item['artistName']?.toString() ?? 'Unknown Artist',
-          thumbnailUrl: artworkUrl,
-          streamUrl: previewUrl,
-        ),
-      );
     }
 
     return parsed;
@@ -328,7 +289,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search any song...',
+              hintText: 'Search full song...',
               prefixIcon: const Icon(Icons.search, color: Colors.white),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
@@ -495,13 +456,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
+    _configureAudioSession();
     _initAudio();
+  }
+
+  // Configures auto-pause and auto-resume behavior when YouTube/Instagram videos play
+  Future<void> _configureAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+
+    session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+          case AudioInterruptionType.pause:
+          case AudioInterruptionType.unknown:
+            _audioPlayer.pause();
+            break;
+        }
+      } else {
+        switch (event.type) {
+          case AudioInterruptionType.pause:
+            _audioPlayer.play();
+            break;
+          case AudioInterruptionType.duck:
+          case AudioInterruptionType.unknown:
+            _audioPlayer.play();
+            break;
+        }
+      }
+    });
   }
 
   Future<void> _initAudio() async {
     try {
-      await _audioPlayer.setUrl(widget.song.streamUrl);
+      final audioSource = AudioSource.uri(
+        Uri.parse(widget.song.streamUrl),
+        tag: MediaItem(
+          id: widget.song.id,
+          album: "Online Streaming",
+          title: widget.song.title,
+          artist: widget.song.artist,
+          artUri: Uri.parse(widget.song.thumbnailUrl),
+        ),
+      );
+
+      await _audioPlayer.setAudioSource(audioSource);
       _audioPlayer.play();
+
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
@@ -591,7 +593,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF221515),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
+                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
                 ),
                 child: Text(
                   _rawError,
