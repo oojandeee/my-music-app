@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt_lib;
 
 void main() {
   runApp(const MyMusicApp());
@@ -38,12 +37,14 @@ class OnlineSong {
   final String title;
   final String artist;
   final String thumbnailUrl;
+  final String streamUrl;
 
   OnlineSong({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
+    required this.streamUrl,
   });
 }
 
@@ -56,9 +57,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 1;
-
   final TextEditingController _searchController = TextEditingController();
-  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
 
   final List<String> _recentSearches = [];
   List<OnlineSong> _searchResults = [];
@@ -78,17 +77,65 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
 
     try {
-      final searchList = await _yt.search.search(query);
-      setState(() {
-        _searchResults = searchList.map((video) {
-          return OnlineSong(
-            id: video.id.value,
-            title: video.title,
-            artist: video.author,
-            thumbnailUrl: video.thumbnails.highResUrl,
-          );
-        }).toList();
-      });
+      final url = Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final results = data['data']?['results'] as List?;
+
+        if (results != null) {
+          final List<OnlineSong> loadedSongs = [];
+
+          for (var item in results) {
+            // Extract title cleanly
+            String title = (item['name'] ?? 'Unknown Track')
+                .toString()
+                .replaceAll('&quot;', '"')
+                .replaceAll('&#039;', "'")
+                .replaceAll('&amp;', '&');
+
+            // Extract best image thumbnail
+            String imgUrl = '';
+            final images = item['image'] as List?;
+            if (images != null && images.isNotEmpty) {
+              imgUrl = images.last['url'] ?? images.last['link'] ?? '';
+            }
+
+            // Extract best direct download audio URL (highest quality)
+            String downloadUrl = '';
+            final downloadUrls = item['downloadUrl'] as List?;
+            if (downloadUrls != null && downloadUrls.isNotEmpty) {
+              downloadUrl = downloadUrls.last['url'] ?? downloadUrls.last['link'] ?? '';
+            }
+
+            // Extract primary artist
+            String artistName = 'Unknown Artist';
+            if (item['artists'] != null && item['artists']['primary'] != null) {
+              final primaryList = item['artists']['primary'] as List;
+              if (primaryList.isNotEmpty) {
+                artistName = primaryList.map((e) => e['name']).join(', ');
+              }
+            }
+
+            if (downloadUrl.isNotEmpty) {
+              loadedSongs.add(
+                OnlineSong(
+                  id: item['id']?.toString() ?? '',
+                  title: title,
+                  artist: artistName,
+                  thumbnailUrl: imgUrl,
+                  streamUrl: downloadUrl,
+                ),
+              );
+            }
+          }
+
+          setState(() {
+            _searchResults = loadedSongs;
+          });
+        }
+      }
     } catch (e) {
       debugPrint('Search error: $e');
     } finally {
@@ -100,7 +147,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   void dispose() {
-    _yt.close();
     _searchController.dispose();
     super.dispose();
   }
@@ -323,8 +369,6 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen> {
   late final AudioPlayer _audioPlayer;
-  final yt_lib.YoutubeExplode _yt = yt_lib.YoutubeExplode();
-
   bool _isLoadingAudio = true;
   String _rawError = '';
 
@@ -332,65 +376,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _loadAndPlayAudio();
+    _initAudio();
   }
 
-  Future<void> _loadAndPlayAudio() async {
-    if (mounted) {
-      setState(() {
-        _isLoadingAudio = true;
-        _rawError = '';
-      });
-    }
-
-    String? audioUrl;
-
+  Future<void> _initAudio() async {
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(widget.song.id);
-      final audioOnly = manifest.audioOnly;
-      if (audioOnly.isNotEmpty) {
-        audioUrl = audioOnly.withHighestBitrate().url.toString();
-      }
-    } catch (e) {
-      debugPrint("YoutubeExplode failed, attempting fallback proxies: $e");
-    }
-
-    if (audioUrl == null || audioUrl.isEmpty) {
-      final pipedInstances = [
-        'https://pipedapi.kavin.rocks',
-        'https://api.piped.privacydev.net',
-        'https://pipedapi.mha.fi'
-      ];
-
-      for (String instance in pipedInstances) {
-        try {
-          final res = await http.get(Uri.parse('$instance/streams/${widget.song.id}')).timeout(const Duration(seconds: 3));
-          if (res.statusCode == 200) {
-            final data = jsonDecode(res.body);
-            final audioStreams = data['audioStreams'] as List?;
-            if (audioStreams != null && audioStreams.isNotEmpty) {
-              audioUrl = audioStreams.first['url'] as String?;
-              if (audioUrl != null && audioUrl.isNotEmpty) break;
-            }
-          }
-        } catch (_) {}
-      }
-    }
-
-    if (audioUrl == null || audioUrl.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _isLoadingAudio = false;
-          _rawError = "Could not fetch audio stream URL. Please try again later.";
-        });
-      }
-      return;
-    }
-
-    try {
-      await _audioPlayer.setUrl(audioUrl);
+      await _audioPlayer.setUrl(widget.song.streamUrl);
       _audioPlayer.play();
-
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
@@ -408,7 +400,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    _yt.close();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -472,7 +463,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   CircularProgressIndicator(color: Colors.purpleAccent),
                   SizedBox(height: 12),
-                  Text('Fetching stream...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text('Loading stream...', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               )
             else if (_rawError.isNotEmpty)
