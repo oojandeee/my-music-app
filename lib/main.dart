@@ -5,13 +5,17 @@ import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_session/audio_session.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.example.music_app.channel.audio',
-    androidNotificationChannelName: 'Music Playback',
-    androidNotificationOngoing: true,
-  );
+  try {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.example.music_app.channel.audio',
+      androidNotificationChannelName: 'Music Playback',
+      androidNotificationOngoing: true,
+    );
+  } catch (e) {
+    debugPrint("JustAudioBackground init error: $e");
+  }
   runApp(const MyMusicApp());
 }
 
@@ -460,32 +464,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _initAudio();
   }
 
-  // Configures auto-pause and auto-resume behavior when YouTube/Instagram videos play
   Future<void> _configureAudioSession() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
 
-    session.interruptionEventStream.listen((event) {
-      if (event.begin) {
-        switch (event.type) {
-          case AudioInterruptionType.duck:
-          case AudioInterruptionType.pause:
-          case AudioInterruptionType.unknown:
-            _audioPlayer.pause();
-            break;
+      session.interruptionEventStream.listen((event) {
+        if (event.begin) {
+          switch (event.type) {
+            case AudioInterruptionType.duck:
+            case AudioInterruptionType.pause:
+            case AudioInterruptionType.unknown:
+              _audioPlayer.pause();
+              break;
+          }
+        } else {
+          switch (event.type) {
+            case AudioInterruptionType.pause:
+            case AudioInterruptionType.duck:
+            case AudioInterruptionType.unknown:
+              _audioPlayer.play();
+              break;
+          }
         }
-      } else {
-        switch (event.type) {
-          case AudioInterruptionType.pause:
-            _audioPlayer.play();
-            break;
-          case AudioInterruptionType.duck:
-          case AudioInterruptionType.unknown:
-            _audioPlayer.play();
-            break;
-        }
-      }
-    });
+      });
+    } catch (e) {
+      debugPrint("AudioSession config error: $e");
+    }
   }
 
   Future<void> _initAudio() async {
