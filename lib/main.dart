@@ -1,3 +1,70 @@
+import 'dart0:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:just_audio/just_audio.dart';
+
+void main() {
+  runApp(const MyMusicApp());
+}
+
+class MyMusicApp extends StatelessWidget {
+  const MyMusicApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'Music App',
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF121212),
+          elevation: 0,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF121212),
+          selectedItemColor: Colors.purpleAccent,
+          unselectedItemColor: Colors.grey,
+        ),
+      ),
+      home: const MainNavigationScreen(),
+    );
+  }
+}
+
+class OnlineSong {
+  final String id;
+  final String title;
+  final String artist;
+  final String thumbnailUrl;
+  final String streamUrl;
+
+  OnlineSong({
+    required this.id,
+    required this.title,
+    required this.artist,
+    required this.thumbnailUrl,
+    required this.streamUrl,
+  });
+}
+
+class MainNavigationScreen extends StatefulWidget {
+  const MainNavigationScreen({super.key});
+
+  @override
+  State<MainNavigationScreenThe reason your app shows an empty screen immediately after searching is due to two critical issues in the code:
+
+1. **Missing Exception & Status Check Handlers:** When the API fails or returns unexpected JSON keys, the `catch` block executes and immediately sets `_isLoading = false` without populating `_searchResults`. Because `_searchResults` stays empty, Flutter falls back to showing the "Browse Categories" screen instead of showing the error message or song list.
+2. **API Endpoint JSON Structure Mismatch:** The endpoint (`saavn.dev`) returns nested structures (`data['results']` or `data['data']['results']`) depending on server routing. If key extraction fails, `loadedSongs` remains empty.
+
+The updated `lib/main.dart` implementation below fixes both issues:
+* **Multi-endpoint Fallback System:** Tries `saavn.dev` first; if it returns no results, it automatically queries a backup API (`saavn.me`).
+* **Visual Error Banner & Debugging Output:** If an API fails or no songs are found, it displays a red warning banner explaining what happened rather than reverting to an empty screen.
+* **Flexible JSON Parsing:** Handles string/list variations for song titles, images, and audio URLs.
+
+Replace the contents of your `lib/main.dart` file on GitHub with this code:
+
+```dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -62,12 +129,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<String> _recentSearches = [];
   List<OnlineSong> _searchResults = [];
   bool _isLoading = false;
+  String _errorMessage = '';
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
 
     setState(() {
       _isLoading = true;
+      _errorMessage = '';
+      _searchResults.clear();
       _recentSearches.remove(query);
       _recentSearches.insert(0, query);
       if (_recentSearches.length > 5) {
@@ -76,73 +146,116 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _searchController.text = query;
     });
 
+    List<OnlineSong> loadedSongs = [];
+
+    // Try Primary API
     try {
-      final url = Uri.parse('https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20');
-      final response = await http.get(url);
+      final primaryUrl = Uri.parse('[https://saavn.dev/api/search/songs?query=$](https://saavn.dev/api/search/songs?query=$){Uri.encodeComponent(query)}&limit=20');
+      final response = await http.get(primaryUrl).timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final results = data['data']?['results'] as List?;
+        final results = (data['data'] != null && data['data']['results'] != null)
+            ? data['data']['results']
+            : (data['results'] ?? data['data']);
 
-        if (results != null) {
-          final List<OnlineSong> loadedSongs = [];
-
-          for (var item in results) {
-            // Extract title cleanly
-            String title = (item['name'] ?? 'Unknown Track')
-                .toString()
-                .replaceAll('&quot;', '"')
-                .replaceAll('&#039;', "'")
-                .replaceAll('&amp;', '&');
-
-            // Extract best image thumbnail
-            String imgUrl = '';
-            final images = item['image'] as List?;
-            if (images != null && images.isNotEmpty) {
-              imgUrl = images.last['url'] ?? images.last['link'] ?? '';
-            }
-
-            // Extract best direct download audio URL (highest quality)
-            String downloadUrl = '';
-            final downloadUrls = item['downloadUrl'] as List?;
-            if (downloadUrls != null && downloadUrls.isNotEmpty) {
-              downloadUrl = downloadUrls.last['url'] ?? downloadUrls.last['link'] ?? '';
-            }
-
-            // Extract primary artist
-            String artistName = 'Unknown Artist';
-            if (item['artists'] != null && item['artists']['primary'] != null) {
-              final primaryList = item['artists']['primary'] as List;
-              if (primaryList.isNotEmpty) {
-                artistName = primaryList.map((e) => e['name']).join(', ');
-              }
-            }
-
-            if (downloadUrl.isNotEmpty) {
-              loadedSongs.add(
-                OnlineSong(
-                  id: item['id']?.toString() ?? '',
-                  title: title,
-                  artist: artistName,
-                  thumbnailUrl: imgUrl,
-                  streamUrl: downloadUrl,
-                ),
-              );
-            }
-          }
-
-          setState(() {
-            _searchResults = loadedSongs;
-          });
+        if (results is List) {
+          loadedSongs = _parseResults(results);
         }
       }
     } catch (e) {
-      debugPrint('Search error: $e');
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      debugPrint('Primary API Error: $e');
     }
+
+    // Try Secondary API if primary produced no results
+    if (loadedSongs.isEmpty) {
+      try {
+        final backupUrl = Uri.parse('[https://saavn.me/search/songs?query=$](https://saavn.me/search/songs?query=$){Uri.encodeComponent(query)}&limit=20');
+        final response = await http.get(backupUrl).timeout(const Duration(seconds: 8));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final results = (data['data'] != null && data['data']['results'] != null)
+              ? data['data']['results']
+              : (data['results'] ?? data['data']);
+
+          if (results is List) {
+            loadedSongs = _parseResults(results);
+          }
+        }
+      } catch (e) {
+        debugPrint('Backup API Error: $e');
+      }
+    }
+
+    setState(() {
+      _isLoading = false;
+      if (loadedSongs.isNotEmpty) {
+        _searchResults = loadedSongs;
+      } else {
+        _errorMessage = 'No playable tracks found for "$query". Please check your connection or try another search.';
+      }
+    });
+  }
+
+  List<OnlineSong> _parseResults(List results) {
+    final List<OnlineSong> parsed = [];
+
+    for (var item in results) {
+      if (item is! Map) continue;
+
+      // Extract Title
+      String title = (item['name'] ?? item['title'] ?? item['song'] ?? 'Unknown Track')
+          .toString()
+          .replaceAll('&quot;', '"')
+          .replaceAll('&#039;', "'")
+          .replaceAll('&amp;', '&');
+
+      // Extract Thumbnail
+      String imgUrl = '';
+      if (item['image'] is List && (item['image'] as List).isNotEmpty) {
+        imgUrl = (item['image'] as List).last['url'] ?? (item['image'] as List).last['link'] ?? '';
+      } else if (item['image'] is String) {
+        imgUrl = item['image'];
+      }
+
+      // Extract Download/Stream URL
+      String downloadUrl = '';
+      if (item['downloadUrl'] is List && (item['downloadUrl'] as List).isNotEmpty) {
+        downloadUrl = (item['downloadUrl'] as List).last['url'] ?? (item['downloadUrl'] as List).last['link'] ?? '';
+      } else if (item['media_url'] is String) {
+        downloadUrl = item['media_url'];
+      } else if (item['url'] is String && item['url'].toString().endsWith('.mp3')) {
+        downloadUrl = item['url'];
+      }
+
+      // Extract Artist
+      String artistName = 'Unknown Artist';
+      if (item['artists'] != null && item['artists']['primary'] is List) {
+        final primaryList = item['artists']['primary'] as List;
+        if (primaryList.isNotEmpty) {
+          artistName = primaryList.map((e) => e['name'] ?? '').where((n) => n.toString().isNotEmpty).join(', ');
+        }
+      } else if (item['primary_artists'] is String) {
+        artistName = item['primary_artists'];
+      } else if (item['singers'] is String) {
+        artistName = item['singers'];
+      }
+
+      if (downloadUrl.isNotEmpty) {
+        parsed.add(
+          OnlineSong(
+            id: item['id']?.toString() ?? UniqueKey().toString(),
+            title: title,
+            artist: artistName.isEmpty ? 'Unknown Artist' : artistName,
+            thumbnailUrl: imgUrl,
+            streamUrl: downloadUrl,
+          ),
+        );
+      }
+    }
+
+    return parsed;
   }
 
   @override
@@ -161,13 +274,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ];
 
     return PopScope(
-      canPop: _currentIndex == 1 && _searchResults.isEmpty,
+      canPop: _currentIndex == 1 && _searchResults.isEmpty && _errorMessage.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
 
-        if (_currentIndex == 1 && _searchResults.isNotEmpty) {
+        if (_currentIndex == 1 && (_searchResults.isNotEmpty || _errorMessage.isNotEmpty)) {
           setState(() {
             _searchResults.clear();
+            _errorMessage = '';
             _searchController.clear();
           });
         } else if (_currentIndex != 1) {
@@ -251,6 +365,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             decoration: InputDecoration(
               hintText: 'Search any song...',
               prefixIcon: const Icon(Icons.search, color: Colors.white),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, color: Colors.grey),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchResults.clear();
+                          _errorMessage = '';
+                        });
+                      },
+                    )
+                  : null,
               filled: true,
               fillColor: const Color(0xFF282828),
               border: OutlineInputBorder(
@@ -262,7 +388,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           const SizedBox(height: 16),
 
-          if (_recentSearches.isNotEmpty) ...[
+          if (_recentSearches.isNotEmpty && _searchResults.isEmpty && _errorMessage.isEmpty) ...[
             const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             Wrap(
@@ -281,68 +407,94 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
-                : _searchResults.isNotEmpty
-                    ? ListView.builder(
-                        itemCount: _searchResults.length,
-                        itemBuilder: (context, index) {
-                          final song = _searchResults[index];
-                          return ListTile(
-                            leading: ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: Image.network(
-                                song.thumbnailUrl,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(Icons.music_note, color: Colors.purpleAccent),
+                : _errorMessage.isNotEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
+                              const SizedBox(height: 12),
+                              Text(
+                                _errorMessage,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
                               ),
-                            ),
-                            title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                            subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => PlayerScreen(song: song),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF282828),
                                 ),
+                                onPressed: () => _performSearch(_searchController.text),
+                                child: const Text('Retry Search', style: TextStyle(color: Colors.white)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _searchResults.isNotEmpty
+                        ? ListView.builder(
+                            itemCount: _searchResults.length,
+                            itemBuilder: (context, index) {
+                              final song = _searchResults[index];
+                              return ListTile(
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Image.network(
+                                    song.thumbnailUrl,
+                                    width: 50,
+                                    height: 50,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) =>
+                                        const Icon(Icons.music_note, color: Colors.purpleAccent),
+                                  ),
+                                ),
+                                title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PlayerScreen(song: song),
+                                    ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: GridView.builder(
-                              itemCount: 4,
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                                childAspectRatio: 1.2,
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Browse Categories', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: GridView.builder(
+                                  itemCount: 4,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                    childAspectRatio: 1.2,
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    return Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF282828),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          'Category ${index + 1}',
+                                          style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               ),
-                              itemBuilder: (context, index) {
-                                return Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF282828),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      'Category ${index + 1}',
-                                      style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                            ],
                           ),
-                        ],
-                      ),
           ),
         ],
       ),
