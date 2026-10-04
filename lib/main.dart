@@ -48,22 +48,23 @@ class OnlineSong {
 }
 
 class DirectSaavnService {
-  // Decrypts JioSaavn's encrypted_media_url into a direct streaming link
+  // Decrypts JioSaavn's encrypted_media_url into direct MP3 CDN link
   static String? decryptMediaUrl(String encryptedUrl) {
     if (encryptedUrl.isEmpty) return null;
     try {
       final key = Uint8List.fromList(utf8.encode("3858f62230ac3c91"));
       final keyParam = encrypt_lib.Key(key);
-      final encrypter = encrypt_lib.Encrypter(
-        encrypt_lib.DES(keyParam, mode: encrypt_lib.DESMode.ecb),
-      );
+
+      // Compatible DES engine initialization for encrypt package
+      final desEngine = encrypt_lib.DES(keyParam, mode: encrypt_lib.DESMode.ecb);
+      final encrypter = encrypt_lib.Encrypter(desEngine);
 
       final encryptedBytes = base64.decode(encryptedUrl);
       final decrypted = encrypter.decrypt(
         encrypt_lib.Encrypted(encryptedBytes),
       );
 
-      // Convert preview links to full 320kbps / 160kbps MP3 stream URLs
+      // Convert preview links to high quality MP3 audio stream URLs
       String cleanUrl = decrypted.replaceAll('_preview.mp4', '.mp4');
       cleanUrl = cleanUrl.replaceAll('http:', 'https:');
       cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
