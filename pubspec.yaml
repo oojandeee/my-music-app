@@ -17,11 +17,11 @@ dependencies:
   # Audio Playback
   just_audio: ^0.9.36
 
-  # DES Decryption for JioSaavn Stream Links
+  # Decryption & Security
   encrypt: ^5.0.3
   crypto: ^3.0.3
 
-  # UI Extensions
+  # UI Icons
   cupertino_icons: ^1.0.6
 
 dev_dependencies:
