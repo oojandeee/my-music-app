@@ -33,19 +33,16 @@ class OnlineSong {
   final String title;
   final String artist;
   final String thumbnailUrl;
-  final String mediaUrl;
 
   OnlineSong({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
-    required this.mediaUrl,
   });
 }
 
-class DirectSaavnService {
-  // Uses JioSaavn song detail API endpoint to get resolved direct CDN stream links safely
+class SaavnService {
   static Future<List<OnlineSong>> searchSongs(String query) async {
     final searchUrl = Uri.parse(
       'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
@@ -53,8 +50,7 @@ class DirectSaavnService {
 
     try {
       final response = await http.get(searchUrl, headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
       }).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -74,7 +70,6 @@ class DirectSaavnService {
                 title: _cleanText(item['title'] ?? 'Unknown Track'),
                 artist: _cleanText(item['more_info']?['singers'] ?? item['subtitle'] ?? 'Unknown Artist'),
                 thumbnailUrl: thumb,
-                mediaUrl: '', // Fetched directly on playback
               ),
             );
           }
@@ -85,16 +80,14 @@ class DirectSaavnService {
     return [];
   }
 
-  // Fetch resolved audio stream link for selected track ID
   static Future<String?> getStreamUrl(String songId) async {
     final detailsUrl = Uri.parse(
-      'https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=$songId',
+      'https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0&_format=json&pids=$songId',
     );
 
     try {
       final response = await http.get(detailsUrl, headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
       }).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -104,7 +97,6 @@ class DirectSaavnService {
           String? mediaUrl = songData['media_preview_url']?.toString();
 
           if (mediaUrl != null && mediaUrl.isNotEmpty) {
-            // Convert 96kbps preview URL to full 320kbps AAC/MP3 stream URL
             String cleanUrl = mediaUrl.replaceAll('_preview.mp4', '.mp4');
             cleanUrl = cleanUrl.replaceAll('http:', 'https:');
             cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
@@ -136,32 +128,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<OnlineSong> _searchResults = [];
   bool _isLoading = false;
-  String _errorMessage = '';
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
 
     setState(() {
       _isLoading = true;
-      _errorMessage = '';
       _searchResults.clear();
     });
 
-    final results = await DirectSaavnService.searchSongs(query);
+    final results = await SaavnService.searchSongs(query);
 
     setState(() {
       _isLoading = false;
-      if (results.isNotEmpty) {
-        _searchResults = results;
-      } else {
-        _errorMessage = 'No tracks found. Check your internet connection.';
-      }
+      _searchResults = results;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Search Music')),
       body: SafeArea(
         child: Column(
           children: [
@@ -170,7 +157,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search full songs...',
+                  hintText: 'Search songs or artists...',
                   prefixIcon: const Icon(Icons.search, color: Colors.white),
                   filled: true,
                   fillColor: const Color(0xFF282828),
@@ -185,36 +172,34 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
-                  : _errorMessage.isNotEmpty
-                      ? Center(child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent)))
-                      : ListView.builder(
-                          itemCount: _searchResults.length,
-                          itemBuilder: (context, index) {
-                            final song = _searchResults[index];
-                            return ListTile(
-                              leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.network(
-                                  song.thumbnailUrl,
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) => const Icon(Icons.music_note, color: Colors.purpleAccent),
-                                ),
+                  : ListView.builder(
+                      itemCount: _searchResults.length,
+                      itemBuilder: (context, index) {
+                        final song = _searchResults[index];
+                        return ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: Image.network(
+                              song.thumbnailUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              errorBuilder: (c, e, s) => const Icon(Icons.music_note),
+                            ),
+                          ),
+                          title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PlayerScreen(song: song),
                               ),
-                              title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PlayerScreen(song: song),
-                                  ),
-                                );
-                              },
                             );
                           },
-                        ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
@@ -235,7 +220,7 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   late final AudioPlayer _audioPlayer;
   bool _isLoadingAudio = true;
-  String _rawError = '';
+  String _errorMsg = '';
 
   @override
   void initState() {
@@ -245,36 +230,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initPlayer() async {
-    final streamUrl = await DirectSaavnService.getStreamUrl(widget.song.id);
+    final streamUrl = await SaavnService.getStreamUrl(widget.song.id);
 
-    if (streamUrl != null && streamUrl.isNotEmpty) {
+    if (streamUrl != null) {
       try {
-        await _audioPlayer.setAudioSource(
-          AudioSource.uri(Uri.parse(streamUrl)),
-          preload: true,
-        );
+        await _audioPlayer.setUrl(streamUrl);
         _audioPlayer.play();
-
-        if (mounted) {
-          setState(() {
-            _isLoadingAudio = false;
-          });
-        }
+        if (mounted) setState(() => _isLoadingAudio = false);
       } catch (e) {
-        if (mounted) {
-          setState(() {
-            _isLoadingAudio = false;
-            _rawError = 'Failed to load audio stream.';
-          });
-        }
+        if (mounted) setState(() { _isLoadingAudio = false; _errorMsg = 'Playback failed.'; });
       }
     } else {
-      if (mounted) {
-        setState(() {
-          _isLoadingAudio = false;
-          _rawError = 'Stream URL unavailable.';
-        });
-      }
+      if (mounted) setState(() { _isLoadingAudio = false; _errorMsg = 'Audio stream unavailable.'; });
     }
   }
 
@@ -316,8 +283,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
             const SizedBox(height: 24),
             if (_isLoadingAudio)
               const CircularProgressIndicator(color: Colors.purpleAccent)
-            else if (_rawError.isNotEmpty)
-              Text(_rawError, style: const TextStyle(color: Colors.redAccent))
+            else if (_errorMsg.isNotEmpty)
+              Text(_errorMsg, style: const TextStyle(color: Colors.redAccent))
             else
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
