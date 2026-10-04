@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as encrypt_lib;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,11 +25,6 @@ class MyMusicApp extends StatelessWidget {
           backgroundColor: Color(0xFF121212),
           elevation: 0,
         ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Color(0xFF121212),
-          selectedItemColor: Colors.purpleAccent,
-          unselectedItemColor: Colors.grey,
-        ),
       ),
       home: const MainNavigationScreen(),
     );
@@ -38,17 +36,87 @@ class OnlineSong {
   final String title;
   final String artist;
   final String thumbnailUrl;
-  final String? directStreamUrl; // Pre-fetched JioSaavn direct CDN link if available
-  final bool isYoutube;
+  final String encryptedMediaUrl;
 
   OnlineSong({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
-    this.directStreamUrl,
-    this.isYoutube = false,
+    required this.encryptedMediaUrl,
   });
+}
+
+class DirectSaavnService {
+  // Decrypts JioSaavn's encrypted_media_url into a direct streaming link
+  static String? decryptMediaUrl(String encryptedUrl) {
+    if (encryptedUrl.isEmpty) return null;
+    try {
+      final key = Uint8List.fromList(utf8.encode("3858f62230ac3c91"));
+      final keyParam = encrypt_lib.Key(key);
+      final encrypter = encrypt_lib.Encrypter(
+        encrypt_lib.DES(keyParam, mode: encrypt_lib.DESMode.ecb),
+      );
+
+      final encryptedBytes = base64.decode(encryptedUrl);
+      final decrypted = encrypter.decrypt(
+        encrypt_lib.Encrypted(encryptedBytes),
+      );
+
+      // Convert preview links to full 320kbps / 160kbps MP3 stream URLs
+      String cleanUrl = decrypted.replaceAll('_preview.mp4', '.mp4');
+      cleanUrl = cleanUrl.replaceAll('http:', 'https:');
+      cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
+      return cleanUrl;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static Future<List<OnlineSong>> searchSongs(String query) async {
+    final searchUrl = Uri.parse(
+      'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
+    );
+
+    try {
+      final response = await http.get(searchUrl, headers: {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      }).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List songsJson = data['songs']?['data'] ?? [];
+
+        List<OnlineSong> songs = [];
+        for (var item in songsJson) {
+          if (item['more_info']?['encrypted_media_url'] != null) {
+            String thumb = item['image'] ?? '';
+            thumb = thumb.replaceAll('150x150', '500x500');
+
+            songs.add(
+              OnlineSong(
+                id: item['id']?.toString() ?? '',
+                title: _cleanText(item['title'] ?? 'Unknown Track'),
+                artist: _cleanText(item['more_info']?['singers'] ?? item['subtitle'] ?? 'Unknown Artist'),
+                thumbnailUrl: thumb,
+                encryptedMediaUrl: item['more_info']['encrypted_media_url'],
+              ),
+            );
+          }
+        }
+        return songs;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  static String _cleanText(String text) {
+    return text
+        .replaceAll('&quot;', '"')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#039;', "'");
+  }
 }
 
 class MainNavigationScreen extends StatefulWidget {
@@ -59,25 +127,10 @@ class MainNavigationScreen extends StatefulWidget {
 }
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 1;
   final TextEditingController _searchController = TextEditingController();
-
-  final List<String> _recentSearches = [];
   List<OnlineSong> _searchResults = [];
   bool _isLoading = false;
   String _errorMessage = '';
-
-  // Multi-source primary and secondary fallback mirrors
-  final List<String> _saavnApis = [
-    'https://saavn.dev/api',
-    'https://saavn.me',
-  ];
-
-  final List<String> _pipedApis = [
-    'https://pipedapi.kavin.rocks',
-    'https://api.piped.private.coffee',
-    'https://pipedapi.ducks.party',
-  ];
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
@@ -86,109 +139,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _isLoading = true;
       _errorMessage = '';
       _searchResults.clear();
-      _recentSearches.remove(query);
-      _recentSearches.insert(0, query);
-      if (_recentSearches.length > 5) {
-        _recentSearches.removeLast();
-      }
-      _searchController.text = query;
     });
 
-    List<OnlineSong> fetchedSongs = [];
-
-    // STEP 1: Try JioSaavn APIs first (Provides direct MP3 streams instantly)
-    for (String baseUrl in _saavnApis) {
-      try {
-        final url = Uri.parse('$baseUrl/search/songs?query=${Uri.encodeComponent(query)}&limit=30');
-        final response = await http.get(url).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          List items = [];
-
-          if (data['data'] != null && data['data']['results'] != null) {
-            items = data['data']['results'];
-          } else if (data['results'] != null) {
-            items = data['results'];
-          }
-
-          for (var item in items) {
-            String? streamUrl;
-            if (item['downloadUrl'] != null && (item['downloadUrl'] as List).isNotEmpty) {
-              List downloads = item['downloadUrl'];
-              // Select highest available quality MP3 stream URL
-              streamUrl = downloads.last['link'] ?? downloads.last['url'];
-            }
-
-            fetchedSongs.add(
-              OnlineSong(
-                id: item['id']?.toString() ?? UniqueKey().toString(),
-                title: item['name'] ?? item['title'] ?? 'Unknown Track',
-                artist: item['primaryArtists'] ?? item['artist'] ?? 'Unknown Artist',
-                thumbnailUrl: (item['image'] != null && (item['image'] as List).isNotEmpty)
-                    ? item['image'].last['link'] ?? item['image'].last['url'] ?? ''
-                    : '',
-                directStreamUrl: streamUrl,
-                isYoutube: false,
-              ),
-            );
-          }
-
-          if (fetchedSongs.isNotEmpty) break;
-        }
-      } catch (_) {
-        continue;
-      }
-    }
-
-    // STEP 2: Fallback to Piped YouTube if JioSaavn returned zero results
-    if (fetchedSongs.isEmpty) {
-      for (String baseUrl in _pipedApis) {
-        try {
-          final url = Uri.parse('$baseUrl/search?q=${Uri.encodeComponent(query)}&filter=music_songs');
-          final response = await http.get(url).timeout(const Duration(seconds: 4));
-
-          if (response.statusCode == 200) {
-            final data = jsonDecode(response.body);
-            final List items = data['items'] ?? [];
-
-            for (var item in items) {
-              if (item['url'] != null) {
-                String vId = item['url'].toString().replaceAll('/watch?v=', '');
-                fetchedSongs.add(
-                  OnlineSong(
-                    id: vId,
-                    title: item['title'] ?? 'Unknown Track',
-                    artist: item['uploaderName'] ?? 'Unknown Artist',
-                    thumbnailUrl: item['thumbnail'] ?? '',
-                    isYoutube: true,
-                  ),
-                );
-              }
-            }
-
-            if (fetchedSongs.isNotEmpty) break;
-          }
-        } catch (_) {
-          continue;
-        }
-      }
-    }
+    final results = await DirectSaavnService.searchSongs(query);
 
     setState(() {
       _isLoading = false;
-      if (fetchedSongs.isNotEmpty) {
-        _searchResults = fetchedSongs;
+      if (results.isNotEmpty) {
+        _searchResults = results;
       } else {
-        _errorMessage = 'No audio stream available right now. Please check your network connection.';
+        _errorMessage = 'No tracks found. Check your internet connection.';
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override
@@ -202,7 +164,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search songs...',
+                  hintText: 'Search full songs...',
                   prefixIcon: const Icon(Icons.search, color: Colors.white),
                   filled: true,
                   fillColor: const Color(0xFF282828),
@@ -224,12 +186,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                           itemBuilder: (context, index) {
                             final song = _searchResults[index];
                             return ListTile(
-                              leading: Image.network(
-                                song.thumbnailUrl,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => const Icon(Icons.music_note, color: Colors.purpleAccent),
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.network(
+                                  song.thumbnailUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (c, e, s) => const Icon(Icons.music_note, color: Colors.purpleAccent),
+                                ),
                               ),
                               title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -237,10 +202,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => PlayerScreen(
-                                      song: song,
-                                      pipedApis: _pipedApis,
-                                    ),
+                                    builder: (context) => PlayerScreen(song: song),
                                   ),
                                 );
                               },
@@ -257,13 +219,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
-  final List<String> pipedApis;
 
-  const PlayerScreen({
-    super.key,
-    required this.song,
-    required this.pipedApis,
-  });
+  const PlayerScreen({super.key, required this.song});
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -278,39 +235,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _startInstantPlayback();
+    _initPlayer();
   }
 
-  Future<void> _startInstantPlayback() async {
-    String? finalStreamUrl = widget.song.directStreamUrl;
+  Future<void> _initPlayer() async {
+    final streamUrl = DirectSaavnService.decryptMediaUrl(widget.song.encryptedMediaUrl);
 
-    // If stream URL is not present (Piped track), fetch the stream link dynamically
-    if (finalStreamUrl == null || finalStreamUrl.isEmpty) {
-      for (String baseUrl in widget.pipedApis) {
-        try {
-          final res = await http
-              .get(Uri.parse('$baseUrl/streams/${widget.song.id}'))
-              .timeout(const Duration(seconds: 3));
-
-          if (res.statusCode == 200) {
-            final data = jsonDecode(res.body);
-            final List streams = data['audioStreams'] ?? [];
-            if (streams.isNotEmpty) {
-              finalStreamUrl = streams.last['url'];
-              break;
-            }
-          }
-        } catch (_) {
-          continue;
-        }
-      }
-    }
-
-    if (finalStreamUrl != null && finalStreamUrl.isNotEmpty) {
+    if (streamUrl != null && streamUrl.isNotEmpty) {
       try {
-        // Stream directly from remote URL chunk-by-chunk without full download
         await _audioPlayer.setAudioSource(
-          AudioSource.uri(Uri.parse(finalStreamUrl)),
+          AudioSource.uri(Uri.parse(streamUrl)),
           preload: true,
         );
         _audioPlayer.play();
@@ -324,7 +258,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (mounted) {
           setState(() {
             _isLoadingAudio = false;
-            _rawError = 'Failed to start playback stream: $e';
+            _rawError = 'Failed to load audio stream.';
           });
         }
       }
@@ -332,7 +266,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
-          _rawError = 'Stream link could not be fetched. Check connection.';
+          _rawError = 'Failed to decrypt audio link.';
         });
       }
     }
@@ -352,16 +286,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.network(
-              widget.song.thumbnailUrl,
-              height: 200,
-              width: 200,
-              errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 100),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                widget.song.thumbnailUrl,
+                height: 240,
+                width: 240,
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 100),
+              ),
             ),
-            const SizedBox(height: 20),
-            Text(widget.song.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text(
+                widget.song.title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(widget.song.artist, style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             if (_isLoadingAudio)
               const CircularProgressIndicator(color: Colors.purpleAccent)
             else if (_rawError.isNotEmpty)
@@ -373,7 +319,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   final isPlaying = snapshot.data?.playing ?? false;
                   return IconButton(
                     iconSize: 64,
-                    icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle, color: Colors.purpleAccent),
+                    icon: Icon(
+                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                      color: Colors.purpleAccent,
+                    ),
                     onPressed: () {
                       isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
                     },
