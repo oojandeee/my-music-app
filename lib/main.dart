@@ -2,20 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
-import 'package:audio_session/audio_session.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await JustAudioBackground.init(
-      androidNotificationChannelId: 'com.example.music_app.channel.audio',
-      androidNotificationChannelName: 'Music Playback',
-      androidNotificationOngoing: true,
-    );
-  } catch (e) {
-    debugPrint("JustAudioBackground init error: $e");
-  }
   runApp(const MyMusicApp());
 }
 
@@ -45,18 +34,16 @@ class MyMusicApp extends StatelessWidget {
 }
 
 class OnlineSong {
-  final String id;
+  final String videoId;
   final String title;
   final String artist;
   final String thumbnailUrl;
-  final String streamUrl;
 
   OnlineSong({
-    required this.id,
+    required this.videoId,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
-    required this.streamUrl,
   });
 }
 
@@ -76,6 +63,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool _isLoading = false;
   String _errorMessage = '';
 
+  // Active Piped instances list for robust backend failover
+  final List<String> _pipedInstances = [
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.private.coffee',
+    'https://pipedapi.r4fo.com',
+    'https://pipedapi.ducks.party',
+  ];
+
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
 
@@ -91,101 +86,47 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _searchController.text = query;
     });
 
-    List<OnlineSong> loadedSongs = [];
+    List<OnlineSong> fetchedSongs = [];
 
-    try {
-      final saavnUrl = Uri.parse(
-        'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=30',
-      );
-      final response = await http.get(
-        saavnUrl,
-        headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 8));
+    // Cycle through multiple Piped API instances if one fails
+    for (String baseUrl in _pipedInstances) {
+      try {
+        final url = Uri.parse('$baseUrl/search?q=${Uri.encodeComponent(query)}&filter=music_songs');
+        final response = await http.get(url).timeout(const Duration(seconds: 4));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final results = (data['data'] != null && data['data']['results'] != null)
-            ? data['data']['results']
-            : (data['results'] ?? data['data']);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final List items = data['items'] ?? [];
 
-        if (results is List) {
-          loadedSongs = _parseFullSongs(results);
+          for (var item in items) {
+            if (item['url'] != null) {
+              String vId = item['url'].toString().replaceAll('/watch?v=', '');
+              fetchedSongs.add(
+                OnlineSong(
+                  videoId: vId,
+                  title: item['title'] ?? 'Unknown Song',
+                  artist: item['uploaderName'] ?? 'Unknown Artist',
+                  thumbnailUrl: item['thumbnail'] ?? '',
+                ),
+              );
+            }
+          }
+
+          if (fetchedSongs.isNotEmpty) break; // Successfully retrieved results
         }
+      } catch (_) {
+        continue; // Try next instance
       }
-    } catch (e) {
-      debugPrint('Search error: $e');
     }
 
     setState(() {
       _isLoading = false;
-      if (loadedSongs.isNotEmpty) {
-        _searchResults = loadedSongs;
+      if (fetchedSongs.isNotEmpty) {
+        _searchResults = fetchedSongs;
       } else {
-        _errorMessage =
-            'No tracks found for "$query". Check your network connection and retry.';
+        _errorMessage = 'No tracks found for "$query". Check network connection and retry.';
       }
     });
-  }
-
-  List<OnlineSong> _parseFullSongs(List results) {
-    final List<OnlineSong> parsed = [];
-
-    for (var item in results) {
-      if (item is! Map) continue;
-
-      String title = (item['name'] ?? item['title'] ?? item['song'] ?? 'Unknown Track')
-          .toString()
-          .replaceAll('&quot;', '"')
-          .replaceAll('&#039;', "'")
-          .replaceAll('&amp;', '&');
-
-      String imgUrl = '';
-      if (item['image'] is List && (item['image'] as List).isNotEmpty) {
-        imgUrl = (item['image'] as List).last['url'] ?? (item['image'] as List).last['link'] ?? '';
-      } else if (item['image'] is String) {
-        imgUrl = item['image'];
-      }
-
-      String downloadUrl = '';
-      if (item['downloadUrl'] is List && (item['downloadUrl'] as List).isNotEmpty) {
-        downloadUrl = (item['downloadUrl'] as List).last['url'] ??
-            (item['downloadUrl'] as List).last['link'] ??
-            '';
-      } else if (item['media_url'] is String) {
-        downloadUrl = item['media_url'];
-      }
-
-      String artistName = 'Unknown Artist';
-      if (item['artists'] != null && item['artists']['primary'] is List) {
-        final primaryList = item['artists']['primary'] as List;
-        if (primaryList.isNotEmpty) {
-          artistName = primaryList
-              .map((e) => e['name'] ?? '')
-              .where((n) => n.toString().isNotEmpty)
-              .join(', ');
-        }
-      } else if (item['primary_artists'] is String) {
-        artistName = item['primary_artists'];
-      }
-
-      if (downloadUrl.isNotEmpty) {
-        parsed.add(
-          OnlineSong(
-            id: item['id']?.toString() ?? UniqueKey().toString(),
-            title: title,
-            artist: artistName.isEmpty ? 'Unknown Artist' : artistName,
-            thumbnailUrl: imgUrl,
-            streamUrl: downloadUrl,
-          ),
-        );
-      }
-    }
-
-    return parsed;
   }
 
   @override
@@ -293,7 +234,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search full song...',
+              hintText: 'Search full songs...',
               prefixIcon: const Icon(Icons.search, color: Colors.white),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
@@ -386,7 +327,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => PlayerScreen(song: song),
+                                      builder: (context) => PlayerScreen(
+                                        song: song,
+                                        pipedInstances: _pipedInstances,
+                                      ),
                                     ),
                                   );
                                 },
@@ -445,7 +389,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
-  const PlayerScreen({super.key, required this.song});
+  final List<String> pipedInstances;
+
+  const PlayerScreen({
+    super.key,
+    required this.song,
+    required this.pipedInstances,
+  });
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -460,65 +410,55 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _configureAudioSession();
     _initAudio();
   }
 
-  Future<void> _configureAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration.music());
+  Future<void> _initAudio() async {
+    String? audioUrl;
 
-      session.interruptionEventStream.listen((event) {
-        if (event.begin) {
-          switch (event.type) {
-            case AudioInterruptionType.duck:
-            case AudioInterruptionType.pause:
-            case AudioInterruptionType.unknown:
-              _audioPlayer.pause();
-              break;
-          }
-        } else {
-          switch (event.type) {
-            case AudioInterruptionType.pause:
-            case AudioInterruptionType.duck:
-            case AudioInterruptionType.unknown:
-              _audioPlayer.play();
-              break;
+    // Fetch stream link dynamically across available Piped nodes
+    for (String baseUrl in widget.pipedInstances) {
+      try {
+        final res = await http
+            .get(Uri.parse('$baseUrl/streams/${widget.song.videoId}'))
+            .timeout(const Duration(seconds: 4));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final List streams = data['audioStreams'] ?? [];
+          if (streams.isNotEmpty) {
+            audioUrl = streams.last['url']; // Highest quality audio stream link
+            break;
           }
         }
-      });
-    } catch (e) {
-      debugPrint("AudioSession config error: $e");
-    }
-  }
-
-  Future<void> _initAudio() async {
-    try {
-      final audioSource = AudioSource.uri(
-        Uri.parse(widget.song.streamUrl),
-        tag: MediaItem(
-          id: widget.song.id,
-          album: "Online Streaming",
-          title: widget.song.title,
-          artist: widget.song.artist,
-          artUri: Uri.parse(widget.song.thumbnailUrl),
-        ),
-      );
-
-      await _audioPlayer.setAudioSource(audioSource);
-      _audioPlayer.play();
-
-      if (mounted) {
-        setState(() {
-          _isLoadingAudio = false;
-        });
+      } catch (_) {
+        continue;
       }
-    } catch (e) {
+    }
+
+    if (audioUrl != null && audioUrl.isNotEmpty) {
+      try {
+        await _audioPlayer.setUrl(audioUrl);
+        _audioPlayer.play();
+
+        if (mounted) {
+          setState(() {
+            _isLoadingAudio = false;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoadingAudio = false;
+            _rawError = 'Failed to initialize player stream: $e';
+          });
+        }
+      }
+    } else {
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
-          _rawError = e.toString();
+          _rawError = 'Stream link could not be fetched. Check connection.';
         });
       }
     }
@@ -589,7 +529,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 children: [
                   CircularProgressIndicator(color: Colors.purpleAccent),
                   SizedBox(height: 12),
-                  Text('Loading stream...', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text('Fetching stream link...', style: TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               )
             else if (_rawError.isNotEmpty)
