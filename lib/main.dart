@@ -34,16 +34,20 @@ class MyMusicApp extends StatelessWidget {
 }
 
 class OnlineSong {
-  final String videoId;
+  final String id;
   final String title;
   final String artist;
   final String thumbnailUrl;
+  final String? directStreamUrl; // Pre-fetched JioSaavn direct CDN link if available
+  final bool isYoutube;
 
   OnlineSong({
-    required this.videoId,
+    required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
+    this.directStreamUrl,
+    this.isYoutube = false,
   });
 }
 
@@ -63,11 +67,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   bool _isLoading = false;
   String _errorMessage = '';
 
-  // Active Piped instances list for robust backend failover
-  final List<String> _pipedInstances = [
+  // Multi-source primary and secondary fallback mirrors
+  final List<String> _saavnApis = [
+    'https://saavn.dev/api',
+    'https://saavn.me',
+  ];
+
+  final List<String> _pipedApis = [
     'https://pipedapi.kavin.rocks',
     'https://api.piped.private.coffee',
-    'https://pipedapi.r4fo.com',
     'https://pipedapi.ducks.party',
   ];
 
@@ -88,34 +96,82 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     List<OnlineSong> fetchedSongs = [];
 
-    // Cycle through multiple Piped API instances if one fails
-    for (String baseUrl in _pipedInstances) {
+    // STEP 1: Try JioSaavn APIs first (Provides direct MP3 streams instantly)
+    for (String baseUrl in _saavnApis) {
       try {
-        final url = Uri.parse('$baseUrl/search?q=${Uri.encodeComponent(query)}&filter=music_songs');
+        final url = Uri.parse('$baseUrl/search/songs?query=${Uri.encodeComponent(query)}&limit=30');
         final response = await http.get(url).timeout(const Duration(seconds: 4));
 
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
-          final List items = data['items'] ?? [];
+          List items = [];
 
-          for (var item in items) {
-            if (item['url'] != null) {
-              String vId = item['url'].toString().replaceAll('/watch?v=', '');
-              fetchedSongs.add(
-                OnlineSong(
-                  videoId: vId,
-                  title: item['title'] ?? 'Unknown Song',
-                  artist: item['uploaderName'] ?? 'Unknown Artist',
-                  thumbnailUrl: item['thumbnail'] ?? '',
-                ),
-              );
-            }
+          if (data['data'] != null && data['data']['results'] != null) {
+            items = data['data']['results'];
+          } else if (data['results'] != null) {
+            items = data['results'];
           }
 
-          if (fetchedSongs.isNotEmpty) break; // Successfully retrieved results
+          for (var item in items) {
+            String? streamUrl;
+            if (item['downloadUrl'] != null && (item['downloadUrl'] as List).isNotEmpty) {
+              List downloads = item['downloadUrl'];
+              // Select highest available quality MP3 stream URL
+              streamUrl = downloads.last['link'] ?? downloads.last['url'];
+            }
+
+            fetchedSongs.add(
+              OnlineSong(
+                id: item['id']?.toString() ?? UniqueKey().toString(),
+                title: item['name'] ?? item['title'] ?? 'Unknown Track',
+                artist: item['primaryArtists'] ?? item['artist'] ?? 'Unknown Artist',
+                thumbnailUrl: (item['image'] != null && (item['image'] as List).isNotEmpty)
+                    ? item['image'].last['link'] ?? item['image'].last['url'] ?? ''
+                    : '',
+                directStreamUrl: streamUrl,
+                isYoutube: false,
+              ),
+            );
+          }
+
+          if (fetchedSongs.isNotEmpty) break;
         }
       } catch (_) {
-        continue; // Try next instance
+        continue;
+      }
+    }
+
+    // STEP 2: Fallback to Piped YouTube if JioSaavn returned zero results
+    if (fetchedSongs.isEmpty) {
+      for (String baseUrl in _pipedApis) {
+        try {
+          final url = Uri.parse('$baseUrl/search?q=${Uri.encodeComponent(query)}&filter=music_songs');
+          final response = await http.get(url).timeout(const Duration(seconds: 4));
+
+          if (response.statusCode == 200) {
+            final data = jsonDecode(response.body);
+            final List items = data['items'] ?? [];
+
+            for (var item in items) {
+              if (item['url'] != null) {
+                String vId = item['url'].toString().replaceAll('/watch?v=', '');
+                fetchedSongs.add(
+                  OnlineSong(
+                    id: vId,
+                    title: item['title'] ?? 'Unknown Track',
+                    artist: item['uploaderName'] ?? 'Unknown Artist',
+                    thumbnailUrl: item['thumbnail'] ?? '',
+                    isYoutube: true,
+                  ),
+                );
+              }
+            }
+
+            if (fetchedSongs.isNotEmpty) break;
+          }
+        } catch (_) {
+          continue;
+        }
       }
     }
 
@@ -124,7 +180,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       if (fetchedSongs.isNotEmpty) {
         _searchResults = fetchedSongs;
       } else {
-        _errorMessage = 'No tracks found for "$query". Check network connection and retry.';
+        _errorMessage = 'No audio stream available right now. Please check your network connection.';
       }
     });
   }
@@ -137,251 +193,63 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> pages = [
-      _buildHomeTab(),
-      _buildSearchTab(),
-      _buildEmptyTab('CREATE'),
-      _buildEmptyTab('PREMIUM'),
-    ];
-
-    return PopScope(
-      canPop: _currentIndex == 1 && _searchResults.isEmpty && _errorMessage.isEmpty,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-
-        if (_currentIndex == 1 && (_searchResults.isNotEmpty || _errorMessage.isNotEmpty)) {
-          setState(() {
-            _searchResults.clear();
-            _errorMessage = '';
-            _searchController.clear();
-          });
-        } else if (_currentIndex != 1) {
-          setState(() {
-            _currentIndex = 1;
-          });
-        }
-      },
-      child: Scaffold(
-        body: SafeArea(child: pages[_currentIndex]),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          type: BottomNavigationBarType.fixed,
-          onTap: (index) => setState(() => _currentIndex = index),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'HOME'),
-            BottomNavigationBarItem(icon: Icon(Icons.search), label: 'SEARCH'),
-            BottomNavigationBarItem(icon: Icon(Icons.add_circle_outline), label: 'CREATE'),
-            BottomNavigationBarItem(icon: Icon(Icons.workspace_premium), label: 'PREMIUM'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHomeTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text(
-            'Jump Back In',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
-          ),
-        ),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: 10,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.8,
-            ),
-            itemBuilder: (context, index) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFF181818),
-                  borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search songs...',
+                  prefixIcon: const Icon(Icons.search, color: Colors.white),
+                  filled: true,
+                  fillColor: const Color(0xFF282828),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.music_note, color: Colors.grey, size: 40),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Box ${index + 1}',
-                      style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSearchTab() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Search full songs...',
-              prefixIcon: const Icon(Icons.search, color: Colors.white),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, color: Colors.grey),
-                      onPressed: () {
-                        setState(() {
-                          _searchController.clear();
-                          _searchResults.clear();
-                          _errorMessage = '';
-                        });
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: const Color(0xFF282828),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+                onSubmitted: _performSearch,
               ),
             ),
-            onSubmitted: _performSearch,
-          ),
-          const SizedBox(height: 16),
-
-          if (_recentSearches.isNotEmpty && _searchResults.isEmpty && _errorMessage.isEmpty) ...[
-            const Text('Recent Searches', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _recentSearches.map((search) {
-                return ActionChip(
-                  label: Text(search),
-                  backgroundColor: const Color(0xFF282828),
-                  onPressed: () => _performSearch(search),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
-                : _errorMessage.isNotEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.error_outline, color: Colors.redAccent, size: 48),
-                              const SizedBox(height: 12),
-                              Text(
-                                _errorMessage,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(color: Colors.redAccent, fontSize: 14),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+                  : _errorMessage.isNotEmpty
+                      ? Center(child: Text(_errorMessage, style: const TextStyle(color: Colors.redAccent)))
+                      : ListView.builder(
+                          itemCount: _searchResults.length,
+                          itemBuilder: (context, index) {
+                            final song = _searchResults[index];
+                            return ListTile(
+                              leading: Image.network(
+                                song.thumbnailUrl,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => const Icon(Icons.music_note, color: Colors.purpleAccent),
                               ),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF282828),
-                                ),
-                                onPressed: () => _performSearch(_searchController.text),
-                                child: const Text('Retry Search', style: TextStyle(color: Colors.white)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : _searchResults.isNotEmpty
-                        ? ListView.builder(
-                            itemCount: _searchResults.length,
-                            itemBuilder: (context, index) {
-                              final song = _searchResults[index];
-                              return ListTile(
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Image.network(
-                                    song.thumbnailUrl,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) =>
-                                        const Icon(Icons.music_note, color: Colors.purpleAccent),
-                                  ),
-                                ),
-                                title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => PlayerScreen(
-                                        song: song,
-                                        pipedInstances: _pipedInstances,
-                                      ),
+                              title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PlayerScreen(
+                                      song: song,
+                                      pipedApis: _pipedApis,
                                     ),
-                                  );
-                                },
-                              );
-                            },
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Browse Categories',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              const SizedBox(height: 12),
-                              Expanded(
-                                child: GridView.builder(
-                                  itemCount: 4,
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    crossAxisSpacing: 12,
-                                    mainAxisSpacing: 12,
-                                    childAspectRatio: 1.2,
                                   ),
-                                  itemBuilder: (context, index) {
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF282828),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          'Category ${index + 1}',
-                                          style: const TextStyle(
-                                              color: Colors.grey, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyTab(String title) {
-    return Center(
-      child: Text(
-        '$title Screen',
-        style: const TextStyle(fontSize: 20, color: Colors.grey),
+                                );
+                              },
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -389,12 +257,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
 class PlayerScreen extends StatefulWidget {
   final OnlineSong song;
-  final List<String> pipedInstances;
+  final List<String> pipedApis;
 
   const PlayerScreen({
     super.key,
     required this.song,
-    required this.pipedInstances,
+    required this.pipedApis,
   });
 
   @override
@@ -410,35 +278,41 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _initAudio();
+    _startInstantPlayback();
   }
 
-  Future<void> _initAudio() async {
-    String? audioUrl;
+  Future<void> _startInstantPlayback() async {
+    String? finalStreamUrl = widget.song.directStreamUrl;
 
-    // Fetch stream link dynamically across available Piped nodes
-    for (String baseUrl in widget.pipedInstances) {
-      try {
-        final res = await http
-            .get(Uri.parse('$baseUrl/streams/${widget.song.videoId}'))
-            .timeout(const Duration(seconds: 4));
+    // If stream URL is not present (Piped track), fetch the stream link dynamically
+    if (finalStreamUrl == null || finalStreamUrl.isEmpty) {
+      for (String baseUrl in widget.pipedApis) {
+        try {
+          final res = await http
+              .get(Uri.parse('$baseUrl/streams/${widget.song.id}'))
+              .timeout(const Duration(seconds: 3));
 
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          final List streams = data['audioStreams'] ?? [];
-          if (streams.isNotEmpty) {
-            audioUrl = streams.last['url']; // Highest quality audio stream link
-            break;
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            final List streams = data['audioStreams'] ?? [];
+            if (streams.isNotEmpty) {
+              finalStreamUrl = streams.last['url'];
+              break;
+            }
           }
+        } catch (_) {
+          continue;
         }
-      } catch (_) {
-        continue;
       }
     }
 
-    if (audioUrl != null && audioUrl.isNotEmpty) {
+    if (finalStreamUrl != null && finalStreamUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(audioUrl);
+        // Stream directly from remote URL chunk-by-chunk without full download
+        await _audioPlayer.setAudioSource(
+          AudioSource.uri(Uri.parse(finalStreamUrl)),
+          preload: true,
+        );
         _audioPlayer.play();
 
         if (mounted) {
@@ -450,7 +324,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (mounted) {
           setState(() {
             _isLoadingAudio = false;
-            _rawError = 'Failed to initialize player stream: $e';
+            _rawError = 'Failed to start playback stream: $e';
           });
         }
       }
@@ -470,151 +344,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.dispose();
   }
 
-  String _formatDuration(Duration? duration) {
-    if (duration == null) return "00:00";
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return "$minutes:$seconds";
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text('Now Playing', style: TextStyle(fontSize: 14)),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      appBar: AppBar(title: const Text('Now Playing')),
+      body: Center(
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Spacer(),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                widget.song.thumbnailUrl,
-                height: 240,
-                width: 240,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 240,
-                  width: 240,
-                  color: Colors.purpleAccent,
-                  child: const Icon(Icons.music_note, size: 100, color: Colors.white),
-                ),
-              ),
+            Image.network(
+              widget.song.thumbnailUrl,
+              height: 200,
+              width: 200,
+              errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 100),
             ),
-            const Spacer(),
-            Text(
-              widget.song.title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              widget.song.artist,
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-            const SizedBox(height: 16),
-
+            const SizedBox(height: 20),
+            Text(widget.song.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(widget.song.artist, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 20),
             if (_isLoadingAudio)
-              const Column(
-                children: [
-                  CircularProgressIndicator(color: Colors.purpleAccent),
-                  SizedBox(height: 12),
-                  Text('Fetching stream link...', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
-              )
+              const CircularProgressIndicator(color: Colors.purpleAccent)
             else if (_rawError.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF221515),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
-                ),
-                child: Text(
-                  _rawError,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                ),
-              )
-            else ...[
-              StreamBuilder<Duration>(
-                stream: _audioPlayer.positionStream,
-                builder: (context, snapshot) {
-                  final position = snapshot.data ?? Duration.zero;
-                  final duration = _audioPlayer.duration ?? Duration.zero;
-
-                  final maxMilliseconds =
-                      duration.inMilliseconds > 0 ? duration.inMilliseconds.toDouble() : 1.0;
-                  final currentMilliseconds =
-                      position.inMilliseconds.toDouble().clamp(0.0, maxMilliseconds);
-
-                  return Column(
-                    children: [
-                      Slider(
-                        activeColor: Colors.purpleAccent,
-                        inactiveColor: Colors.grey[800],
-                        min: 0.0,
-                        max: maxMilliseconds,
-                        value: currentMilliseconds,
-                        onChanged: (value) {
-                          _audioPlayer.seek(Duration(milliseconds: value.toInt()));
-                        },
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(_formatDuration(position),
-                                style: const TextStyle(color: Colors.grey)),
-                            Text(_formatDuration(duration),
-                                style: const TextStyle(color: Colors.grey)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
+              Text(_rawError, style: const TextStyle(color: Colors.redAccent))
+            else
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
                 builder: (context, snapshot) {
-                  final playerState = snapshot.data;
-                  final processingState = playerState?.processingState;
-                  final isPlaying = playerState?.playing ?? false;
-
-                  if (processingState == ProcessingState.buffering) {
-                    return const CircularProgressIndicator(color: Colors.purpleAccent);
-                  }
-
+                  final isPlaying = snapshot.data?.playing ?? false;
                   return IconButton(
                     iconSize: 64,
-                    icon: Icon(
-                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: Colors.purpleAccent,
-                    ),
+                    icon: Icon(isPlaying ? Icons.pause_circle : Icons.play_circle, color: Colors.purpleAccent),
                     onPressed: () {
-                      if (isPlaying) {
-                        _audioPlayer.pause();
-                      } else {
-                        _audioPlayer.play();
-                      }
+                      isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
                     },
                   );
                 },
               ),
-            ],
-            const Spacer(),
           ],
         ),
       ),
