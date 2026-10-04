@@ -1,10 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart' as encrypt_lib;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,44 +33,19 @@ class OnlineSong {
   final String title;
   final String artist;
   final String thumbnailUrl;
-  final String encryptedMediaUrl;
+  final String mediaUrl;
 
   OnlineSong({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
-    required this.encryptedMediaUrl,
+    required this.mediaUrl,
   });
 }
 
 class DirectSaavnService {
-  // Decrypts JioSaavn's encrypted_media_url into direct MP3 CDN link
-  static String? decryptMediaUrl(String encryptedUrl) {
-    if (encryptedUrl.isEmpty) return null;
-    try {
-      final key = Uint8List.fromList(utf8.encode("3858f62230ac3c91"));
-      final keyParam = encrypt_lib.Key(key);
-
-      // Compatible DES engine initialization for encrypt package
-      final desEngine = encrypt_lib.DES(keyParam, mode: encrypt_lib.DESMode.ecb);
-      final encrypter = encrypt_lib.Encrypter(desEngine);
-
-      final encryptedBytes = base64.decode(encryptedUrl);
-      final decrypted = encrypter.decrypt(
-        encrypt_lib.Encrypted(encryptedBytes),
-      );
-
-      // Convert preview links to high quality MP3 audio stream URLs
-      String cleanUrl = decrypted.replaceAll('_preview.mp4', '.mp4');
-      cleanUrl = cleanUrl.replaceAll('http:', 'https:');
-      cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
-      return cleanUrl;
-    } catch (e) {
-      return null;
-    }
-  }
-
+  // Uses JioSaavn song detail API endpoint to get resolved direct CDN stream links safely
   static Future<List<OnlineSong>> searchSongs(String query) async {
     final searchUrl = Uri.parse(
       'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
@@ -91,17 +63,18 @@ class DirectSaavnService {
 
         List<OnlineSong> songs = [];
         for (var item in songsJson) {
-          if (item['more_info']?['encrypted_media_url'] != null) {
+          String songId = item['id']?.toString() ?? '';
+          if (songId.isNotEmpty) {
             String thumb = item['image'] ?? '';
             thumb = thumb.replaceAll('150x150', '500x500');
 
             songs.add(
               OnlineSong(
-                id: item['id']?.toString() ?? '',
+                id: songId,
                 title: _cleanText(item['title'] ?? 'Unknown Track'),
                 artist: _cleanText(item['more_info']?['singers'] ?? item['subtitle'] ?? 'Unknown Artist'),
                 thumbnailUrl: thumb,
-                encryptedMediaUrl: item['more_info']['encrypted_media_url'],
+                mediaUrl: '', // Fetched directly on playback
               ),
             );
           }
@@ -110,6 +83,38 @@ class DirectSaavnService {
       }
     } catch (_) {}
     return [];
+  }
+
+  // Fetch resolved audio stream link for selected track ID
+  static Future<String?> getStreamUrl(String songId) async {
+    final detailsUrl = Uri.parse(
+      'https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0%3F_marker%3D0&_format=json&pids=$songId',
+    );
+
+    try {
+      final response = await http.get(detailsUrl, headers: {
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      }).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data[songId] != null) {
+          final songData = data[songId];
+          String? mediaUrl = songData['media_preview_url']?.toString();
+
+          if (mediaUrl != null && mediaUrl.isNotEmpty) {
+            // Convert 96kbps preview URL to full 320kbps AAC/MP3 stream URL
+            String cleanUrl = mediaUrl.replaceAll('_preview.mp4', '.mp4');
+            cleanUrl = cleanUrl.replaceAll('http:', 'https:');
+            cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
+            cleanUrl = cleanUrl.replaceAll('v0.cdn.jiosaavn.com', 'aac.saavncdn.com');
+            return cleanUrl;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   static String _cleanText(String text) {
@@ -240,7 +245,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initPlayer() async {
-    final streamUrl = DirectSaavnService.decryptMediaUrl(widget.song.encryptedMediaUrl);
+    final streamUrl = await DirectSaavnService.getStreamUrl(widget.song.id);
 
     if (streamUrl != null && streamUrl.isNotEmpty) {
       try {
@@ -267,7 +272,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoadingAudio = false;
-          _rawError = 'Failed to decrypt audio link.';
+          _rawError = 'Stream URL unavailable.';
         });
       }
     }
