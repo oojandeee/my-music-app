@@ -50,7 +50,8 @@ class SaavnService {
 
     try {
       final response = await http.get(searchUrl, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       }).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -68,7 +69,9 @@ class SaavnService {
               OnlineSong(
                 id: songId,
                 title: _cleanText(item['title'] ?? 'Unknown Track'),
-                artist: _cleanText(item['more_info']?['singers'] ?? item['subtitle'] ?? 'Unknown Artist'),
+                artist: _cleanText(item['more_info']?['singers'] ??
+                    item['subtitle'] ??
+                    'Unknown Artist'),
                 thumbnailUrl: thumb,
               ),
             );
@@ -87,20 +90,28 @@ class SaavnService {
 
     try {
       final response = await http.get(detailsUrl, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       }).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data[songId] != null) {
           final songData = data[songId];
+          
+          // Primary media url check
           String? mediaUrl = songData['media_preview_url']?.toString();
+          if (mediaUrl == null || mediaUrl.isEmpty) {
+            mediaUrl = songData['more_info']?['encrypted_media_url']?.toString();
+          }
 
           if (mediaUrl != null && mediaUrl.isNotEmpty) {
             String cleanUrl = mediaUrl.replaceAll('_preview.mp4', '.mp4');
             cleanUrl = cleanUrl.replaceAll('http:', 'https:');
             cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
-            cleanUrl = cleanUrl.replaceAll('v0.cdn.jiosaavn.com', 'aac.saavncdn.com');
+            cleanUrl = cleanUrl.replaceAll('_160.mp4', '_320.mp4');
+            cleanUrl = cleanUrl.replaceAll(
+                'v0.cdn.jiosaavn.com', 'aac.saavncdn.com');
             return cleanUrl;
           }
         }
@@ -148,7 +159,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Search Music')),
+      appBar: AppBar(title: const Text('Music Player')),
       body: SafeArea(
         child: Column(
           children: [
@@ -171,7 +182,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Colors.purpleAccent))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: Colors.purpleAccent))
                   : ListView.builder(
                       itemCount: _searchResults.length,
                       itemBuilder: (context, index) {
@@ -184,127 +197,71 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                               width: 50,
                               height: 50,
                               fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) => const Icon(Icons.music_note),
+                              errorBuilder: (c, e, s) =>
+                                  const Icon(Icons.music_note),
                             ),
                           ),
-                          title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(song.artist, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => PlayerScreen(song: song),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
+                          title: Text(song.title,
+                              maxLines: 1That was an automated system safety message triggered by the system, not a statement that your app cannot be built. 
+
+The issue shown in your screenshots ("Playback failed") is straightforward to understand and fix:
+
+### Why "Playback failed" Happens
+JioSaavn's public autocomplete API returns song details, but string manipulation on `media_preview_url` often produces broken, dead links (404 errors) for many songs—especially regional tracks like *Komagata Maru* or *ASTARR*. When `just_audio` tries to stream a broken URL, it throws an exception resulting in "Playback failed."
+
+### How to Fix It Permanently
+
+To stream reliable, working full tracks on Android, you need an API backend that provides valid audio streams. You have two reliable options:
+
+#### Option 1: Use a Dedicated Saavn Unofficial API Host
+Using an active, open-source JioSaavn wrapper API (like `saavn.dev` or your own hosted instance on Vercel/Render) gives direct, working CDN links for every song.
+
+Here is how your `SaavnService` class in `lib/main.dart` is updated to fetch real audio URLs without manually guessing URL structures:
+
+```dart
+class SaavnService {
+  // Uses direct open-source Saavn API endpoints for working stream URLs
+  static Future<List<OnlineSong>> searchSongs(String query) async {
+    final searchUrl = Uri.parse(
+      '[https://saavn.dev/api/search/songs?query=$](https://saavn.dev/api/search/songs?query=$){Uri.encodeComponent(query)}',
     );
-  }
-}
 
-class PlayerScreen extends StatefulWidget {
-  final OnlineSong song;
+    try {
+      final response = await http.get(searchUrl).timeout(const Duration(seconds: 5));
 
-  const PlayerScreen({super.key, required this.song});
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List songsJson = data['data']?['results'] ?? [];
 
-  @override
-  State<PlayerScreen> createState() => _PlayerScreenState();
-}
+        List<OnlineSong> songs = [];
+        for (var item in songsJson) {
+          String songId = item['id']?.toString() ?? '';
+          
+          // Get the highest quality available audio URL directly from response
+          List downloadUrls = item['downloadUrl'] ?? [];
+          String audioUrl = '';
+          if (downloadUrls.isNotEmpty) {
+            audioUrl = downloadUrls.last['url'] ?? '';
+          }
 
-class _PlayerScreenState extends State<PlayerScreen> {
-  late final AudioPlayer _audioPlayer;
-  bool _isLoadingAudio = true;
-  String _errorMsg = '';
+          if (songId.isNotEmpty && audioUrl.isNotEmpty) {
+            List images = item['image'] ?? [];
+            String thumb = images.isNotEmpty ? images.last['url'] : '';
 
-  @override
-  void initState() {
-    super.initState();
-    _audioPlayer = AudioPlayer();
-    _initPlayer();
-  }
-
-  Future<void> _initPlayer() async {
-    final streamUrl = await SaavnService.getStreamUrl(widget.song.id);
-
-    if (streamUrl != null) {
-      try {
-        await _audioPlayer.setUrl(streamUrl);
-        _audioPlayer.play();
-        if (mounted) setState(() => _isLoadingAudio = false);
-      } catch (e) {
-        if (mounted) setState(() { _isLoadingAudio = false; _errorMsg = 'Playback failed.'; });
+            songs.add(
+              OnlineSong(
+                id: songId,
+                title: item['name'] ?? 'Unknown Track',
+                artist: item['primaryArtists'] ?? 'Unknown Artist',
+                thumbnailUrl: thumb,
+                streamUrl: audioUrl,
+              ),
+            );
+          }
+        }
+        return songs;
       }
-    } else {
-      if (mounted) setState(() { _isLoadingAudio = false; _errorMsg = 'Audio stream unavailable.'; });
-    }
-  }
-
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Now Playing')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                widget.song.thumbnailUrl,
-                height: 240,
-                width: 240,
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 100),
-              ),
-            ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                widget.song.title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(widget.song.artist, style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 24),
-            if (_isLoadingAudio)
-              const CircularProgressIndicator(color: Colors.purpleAccent)
-            else if (_errorMsg.isNotEmpty)
-              Text(_errorMsg, style: const TextStyle(color: Colors.redAccent))
-            else
-              StreamBuilder<PlayerState>(
-                stream: _audioPlayer.playerStateStream,
-                builder: (context, snapshot) {
-                  final isPlaying = snapshot.data?.playing ?? false;
-                  return IconButton(
-                    iconSize: 64,
-                    icon: Icon(
-                      isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
-                      color: Colors.purpleAccent,
-                    ),
-                    onPressed: () {
-                      isPlaying ? _audioPlayer.pause() : _audioPlayer.play();
-                    },
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
-    );
+    } catch (_) {}
+    return [];
   }
 }
