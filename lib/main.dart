@@ -33,46 +33,54 @@ class OnlineSong {
   final String title;
   final String artist;
   final String thumbnailUrl;
+  final String streamUrl;
 
   OnlineSong({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
+    required this.streamUrl,
   });
 }
 
 class SaavnService {
+  // Uses open-source JioSaavn backend API to return real direct MP3/AAC CDN links
   static Future<List<OnlineSong>> searchSongs(String query) async {
     final searchUrl = Uri.parse(
-      'https://www.jiosaavn.com/api.php?__call=autocomplete.get&_format=json&_marker=0&cc=in&includeMetaTags=1&query=${Uri.encodeComponent(query)}',
+      'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
     );
 
     try {
-      final response = await http.get(searchUrl, headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      }).timeout(const Duration(seconds: 5));
+      final response = await http.get(searchUrl).timeout(const Duration(seconds: 7));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final List songsJson = data['songs']?['data'] ?? [];
+        final List songsJson = data['data']?['results'] ?? [];
 
         List<OnlineSong> songs = [];
         for (var item in songsJson) {
           String songId = item['id']?.toString() ?? '';
-          if (songId.isNotEmpty) {
-            String thumb = item['image'] ?? '';
-            thumb = thumb.replaceAll('150x150', '500x500');
+
+          // Extract direct working audio stream URL
+          List downloadUrls = item['downloadUrl'] ?? [];
+          String audioUrl = '';
+          if (downloadUrls.isNotEmpty) {
+            // Get highest available quality URL (320kbps or 160kbps)
+            audioUrl = downloadUrls.last['url'] ?? '';
+          }
+
+          if (songId.isNotEmpty && audioUrl.isNotEmpty) {
+            List images = item['image'] ?? [];
+            String thumb = images.isNotEmpty ? images.last['url'] : '';
 
             songs.add(
               OnlineSong(
                 id: songId,
-                title: _cleanText(item['title'] ?? 'Unknown Track'),
-                artist: _cleanText(item['more_info']?['singers'] ??
-                    item['subtitle'] ??
-                    'Unknown Artist'),
+                title: _cleanText(item['name'] ?? 'Unknown Track'),
+                artist: _cleanText(item['primaryArtists'] ?? 'Unknown Artist'),
                 thumbnailUrl: thumb,
+                streamUrl: audioUrl,
               ),
             );
           }
@@ -81,43 +89,6 @@ class SaavnService {
       }
     } catch (_) {}
     return [];
-  }
-
-  static Future<String?> getStreamUrl(String songId) async {
-    final detailsUrl = Uri.parse(
-      'https://www.jiosaavn.com/api.php?__call=song.getDetails&cc=in&_marker=0&_format=json&pids=$songId',
-    );
-
-    try {
-      final response = await http.get(detailsUrl, headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      }).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data[songId] != null) {
-          final songData = data[songId];
-          
-          // Primary media url check
-          String? mediaUrl = songData['media_preview_url']?.toString();
-          if (mediaUrl == null || mediaUrl.isEmpty) {
-            mediaUrl = songData['more_info']?['encrypted_media_url']?.toString();
-          }
-
-          if (mediaUrl != null && mediaUrl.isNotEmpty) {
-            String cleanUrl = mediaUrl.replaceAll('_preview.mp4', '.mp4');
-            cleanUrl = cleanUrl.replaceAll('http:', 'https:');
-            cleanUrl = cleanUrl.replaceAll('_96.mp4', '_320.mp4');
-            cleanUrl = cleanUrl.replaceAll('_160.mp4', '_320.mp4');
-            cleanUrl = cleanUrl.replaceAll(
-                'v0.cdn.jiosaavn.com', 'aac.saavncdn.com');
-            return cleanUrl;
-          }
-        }
-      }
-    } catch (_) {}
-    return null;
   }
 
   static String _cleanText(String text) {
@@ -202,66 +173,4 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                             ),
                           ),
                           title: Text(song.title,
-                              maxLines: 1That was an automated system safety message triggered by the system, not a statement that your app cannot be built. 
-
-The issue shown in your screenshots ("Playback failed") is straightforward to understand and fix:
-
-### Why "Playback failed" Happens
-JioSaavn's public autocomplete API returns song details, but string manipulation on `media_preview_url` often produces broken, dead links (404 errors) for many songs—especially regional tracks like *Komagata Maru* or *ASTARR*. When `just_audio` tries to stream a broken URL, it throws an exception resulting in "Playback failed."
-
-### How to Fix It Permanently
-
-To stream reliable, working full tracks on Android, you need an API backend that provides valid audio streams. You have two reliable options:
-
-#### Option 1: Use a Dedicated Saavn Unofficial API Host
-Using an active, open-source JioSaavn wrapper API (like `saavn.dev` or your own hosted instance on Vercel/Render) gives direct, working CDN links for every song.
-
-Here is how your `SaavnService` class in `lib/main.dart` is updated to fetch real audio URLs without manually guessing URL structures:
-
-```dart
-class SaavnService {
-  // Uses direct open-source Saavn API endpoints for working stream URLs
-  static Future<List<OnlineSong>> searchSongs(String query) async {
-    final searchUrl = Uri.parse(
-      '[https://saavn.dev/api/search/songs?query=$](https://saavn.dev/api/search/songs?query=$){Uri.encodeComponent(query)}',
-    );
-
-    try {
-      final response = await http.get(searchUrl).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List songsJson = data['data']?['results'] ?? [];
-
-        List<OnlineSong> songs = [];
-        for (var item in songsJson) {
-          String songId = item['id']?.toString() ?? '';
-          
-          // Get the highest quality available audio URL directly from response
-          List downloadUrls = item['downloadUrl'] ?? [];
-          String audioUrl = '';
-          if (downloadUrls.isNotEmpty) {
-            audioUrl = downloadUrls.last['url'] ?? '';
-          }
-
-          if (songId.isNotEmpty && audioUrl.isNotEmpty) {
-            List images = item['image'] ?? [];
-            String thumb = images.isNotEmpty ? images.last['url'] : '';
-
-            songs.add(
-              OnlineSong(
-                id: songId,
-                title: item['name'] ?? 'Unknown Track',
-                artist: item['primaryArtists'] ?? 'Unknown Artist',
-                thumbnailUrl: thumb,
-                streamUrl: audioUrl,
-              ),
-            );
-          }
-        }
-        return songs;
-      }
-    } catch (_) {}
-    return [];
-  }
-}
+                            
