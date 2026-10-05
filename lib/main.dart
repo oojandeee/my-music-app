@@ -171,6 +171,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                               errorBuilder: (c, e, s) =>
                                   const Icon(Icons.music_note),
                             ),
-                          ),
-                          title: Text(song.title,
-                            
+                          )
+// CORRECT:
+title: Text(
+  song.title, 
+  maxLines: 1, 
+  overflow: TextOverflow.ellipsis,
+),
+        
