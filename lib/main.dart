@@ -52,10 +52,8 @@ class SongModel {
 }
 
 class BackendMusicService {
-  // Your Live Render Proxy URL
   static const String baseUrl = 'https://music-backend-c3o4.onrender.com';
 
-  // Search songs via Proxy
   static Future<List<SongModel>> searchSongs(String query) async {
     final searchUrl = Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(query)}');
 
@@ -71,7 +69,6 @@ class BackendMusicService {
     return [];
   }
 
-  // Fetch stream link via Proxy
   static Future<String?> fetchStreamUrl(String songId) async {
     final url = Uri.parse('$baseUrl/api/stream?id=$songId');
 
@@ -150,7 +147,15 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
 
     if (streamUrl != null && streamUrl.isNotEmpty) {
       try {
-        await _audioPlayer.setUrl(streamUrl);
+        // Set Audio Source with custom headers to prevent CDN blocking
+        final audioSource = AudioSource.uri(
+          Uri.parse(streamUrl),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+        );
+
+        await _audioPlayer.setAudioSource(audioSource);
         await _audioPlayer.play();
       } catch (e) {
         _showToast("Playback failed for this track.");
