@@ -23,72 +23,34 @@ class MyMusicApp extends StatelessWidget {
           elevation: 0,
         ),
       ),
-      home: const MainNavigationScreen(),
+      home: const MusicHomeScreen(),
     );
   }
 }
 
-class OnlineSong {
+class SongModel {
   final String id;
   final String title;
   final String artist;
   final String thumbnailUrl;
   final String streamUrl;
 
-  OnlineSong({
+  SongModel({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
     required this.streamUrl,
   });
-}
 
-class SaavnService {
-  // Uses open-source JioSaavn backend API to return real direct MP3/AAC CDN links
-  static Future<List<OnlineSong>> searchSongs(String query) async {
-    final searchUrl = Uri.parse(
-      'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
+  factory SongModel.fromJson(Map<String, dynamic> json) {
+    return SongModel(
+      id: json['id']?.toString() ?? '',
+      title: _cleanText(json['title'] ?? 'Unknown Track'),
+      artist: _cleanText(json['artist'] ?? 'Unknown Artist'),
+      thumbnailUrl: json['imageUrl'] ?? json['thumbnailUrl'] ?? '',
+      streamUrl: json['streamUrl'] ?? '',
     );
-
-    try {
-      final response = await http.get(searchUrl).timeout(const Duration(seconds: 7));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List songsJson = data['data']?['results'] ?? [];
-
-        List<OnlineSong> songs = [];
-        for (var item in songsJson) {
-          String songId = item['id']?.toString() ?? '';
-
-          // Extract direct working audio stream URL
-          List downloadUrls = item['downloadUrl'] ?? [];
-          String audioUrl = '';
-          if (downloadUrls.isNotEmpty) {
-            // Get highest available quality URL (320kbps or 160kbps)
-            audioUrl = downloadUrls.last['url'] ?? '';
-          }
-
-          if (songId.isNotEmpty && audioUrl.isNotEmpty) {
-            List images = item['image'] ?? [];
-            String thumb = images.isNotEmpty ? images.last['url'] : '';
-
-            songs.add(
-              OnlineSong(
-                id: songId,
-                title: _cleanText(item['name'] ?? 'Unknown Track'),
-                artist: _cleanText(item['primaryArtists'] ?? 'Unknown Artist'),
-                thumbnailUrl: thumb,
-                streamUrl: audioUrl,
-              ),
-            );
-          }
-        }
-        return songs;
-      }
-    } catch (_) {}
-    return [];
   }
 
   static String _cleanText(String text) {
@@ -99,17 +61,97 @@ class SaavnService {
   }
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class BackendMusicService {
+  // Live Render Proxy Base URL
+  static const String baseUrl = 'https://music-backend-c3o4.onrender.com';
 
-  @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  // Search songs via open Saavn search API
+  static Future<List<SongModel>> searchSongs(String query) async {
+    final searchUrl = Uri.parse(
+      'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
+    );
+
+    try {
+      final response = await http.get(searchUrl).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List results = data['data']?['results'] ?? [];
+
+        List<SongModel> songs = [];
+        for (var item in results) {
+          String songId = item['id']?.toString() ?? '';
+          if (songId.isNotEmpty) {
+            List images = item['image'] ?? [];
+            String thumb = images.isNotEmpty ? images.last['url'] : '';
+
+            songs.add(
+              SongModel(
+                id: songId,
+                title: SongModel._cleanText(item['name'] ?? 'Unknown Track'),
+                artist: SongModel._cleanText(item['primaryArtists'] ?? 'Unknown Artist'),
+                thumbnailUrl: thumb,
+                streamUrl: '', // Stream URL will be fetched on demand via backend proxy
+              ),
+            );
+          }
+        }
+        return songs;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Fetch verified high-quality audio stream link from Render proxy backend
+  static Future<String?> fetchStreamUrl(String songId) async {
+    final url = Uri.parse('$baseUrl/api/stream?id=$songId');
+
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['streamUrl'];
+      }
+    } catch (_) {}
+    return null;
+  }
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class MusicHomeScreen extends StatefulWidget {
+  const MusicHomeScreen({super.key});
+
+  @override
+  State<MusicHomeScreen> createState() => _MusicHomeScreenState();
+}
+
+class _MusicHomeScreenState extends State<MusicHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-  List<OnlineSong> _searchResults = [];
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
+  List<SongModel> _searchResults = [];
   bool _isLoading = false;
+  SongModel? _currentPlayingSong;
+  bool _isPlaying = false;
+  bool _isBuffering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initAudioPlayerListeners();
+  }
+
+  void _initAudioPlayerListeners() {
+    _audioPlayer.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = state.playing;
+          _isBuffering = state.processingState == ProcessingState.buffering ||
+              state.processingState == ProcessingState.loading;
+        });
+      }
+    });
+  }
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
@@ -119,18 +161,66 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       _searchResults.clear();
     });
 
-    final results = await SaavnService.searchSongs(query);
+    final results = await BackendMusicService.searchSongs(query);
 
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _searchResults = results;
+      });
+    }
+  }
+
+  Future<void> _playSong(SongModel song) async {
     setState(() {
-      _isLoading = false;
-      _searchResults = results;
+      _currentPlayingSong = song;
+      _isBuffering = true;
     });
+
+    // Request stream URL from backend proxy server
+    String? streamUrl = await BackendMusicService.fetchStreamUrl(song.id);
+
+    if (streamUrl != null && streamUrl.isNotEmpty) {
+      try {
+        await _audioPlayer.setUrl(streamUrl);
+        await _audioPlayer.play();
+      } catch (e) {
+        _showToast("Playback failed for this track.");
+      }
+    } else {
+      _showToast("Unable to resolve stream from proxy server.");
+    }
+
+    if (mounted) {
+      setState(() {
+        _isBuffering = false;
+      });
+    }
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _audioPlayer.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Music Player')),
+      appBar: AppBar(
+        title: const Text('Music Player'),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -139,7 +229,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: 'Search songs or artists...',
+                  hintText: 'Search song or artist...',
                   prefixIcon: const Icon(Icons.search, color: Colors.white),
                   filled: true,
                   fillColor: const Color(0xFF282828),
@@ -154,12 +244,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(
-                          color: Colors.purpleAccent))
+                      child: CircularProgressIndicator(color: Colors.purpleAccent),
+                    )
                   : ListView.builder(
                       itemCount: _searchResults.length,
                       itemBuilder: (context, index) {
                         final song = _searchResults[index];
+                        final bool isSelected =
+                            _currentPlayingSong?.id == song.id;
+
                         return ListTile(
                           leading: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
@@ -169,13 +262,115 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                               height: 50,
                               fit: BoxFit.cover,
                               errorBuilder: (c, e, s) =>
-                                  const Icon(Icons.music_note),
+                                  const Icon(Icons.music_note, size: 30),
                             ),
-                          )
-// CORRECT:
-title: Text(
-  song.title, 
-  maxLines: 1, 
-  overflow: TextOverflow.ellipsis,
-),
-        
+                          ),
+                          title: Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isSelected ? Colors.purpleAccent : Colors.white,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                          subtitle: Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                          trailing: isSelected && _isBuffering
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.purpleAccent,
+                                  ),
+                                )
+                              : Icon(
+                                  isSelected && _isPlaying
+                                      ? Icons.pause_circle_filled
+                                      : Icons.play_circle_fill,
+                                  color: Colors.purpleAccent,
+                                  size: 32,
+                                ),
+                          onTap: () => _playSong(song),
+                        );
+                      },
+                    ),
+            ),
+            if (_currentPlayingSong != null) _buildMiniPlayer(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniPlayer() {
+    return Container(
+      color: const Color(0xFF212121),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.network(
+              _currentPlayingSong!.thumbnailUrl,
+              width: 45,
+              height: 45,
+              fit: BoxFit.cover,
+              errorBuilder: (c, e, s) => const Icon(Icons.music_note),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _currentPlayingSong!.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  _currentPlayingSong!.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          if (_isBuffering)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.purpleAccent),
+              ),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                _isPlaying ? Icons.pause : Icons.play_arrow,
+                color: Colors.white,
+                size: 30,
+              ),
+              onPressed: () {
+                if (_isPlaying) {
+                  _audioPlayer.pause();
+                } else {
+                  _audioPlayer.play();
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
