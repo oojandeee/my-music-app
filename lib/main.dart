@@ -59,7 +59,6 @@ class BackendMusicService {
 
     try {
       final response = await http.get(searchUrl).timeout(const Duration(seconds: 10));
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List results = data['results'] ?? [];
@@ -69,18 +68,21 @@ class BackendMusicService {
     return [];
   }
 
-  static Future<String?> fetchStreamUrl(String songId) async {
+  static Future<Map<String, dynamic>> fetchStreamDetails(String songId) async {
     final url = Uri.parse('$baseUrl/api/stream?id=$songId');
 
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return data['streamUrl'];
+      if (response.statusCode == 200 && data['streamUrl'] != null) {
+        return {'success': true, 'streamUrl': data['streamUrl']};
+      } else {
+        return {'success': false, 'error': data['error'] ?? 'HTTP ${response.statusCode}'};
       }
-    } catch (_) {}
-    return null;
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
   }
 }
 
@@ -143,25 +145,42 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
       _isBuffering = true;
     });
 
-    String? streamUrl = await BackendMusicService.fetchStreamUrl(song.id);
+    final streamResult = await BackendMusicService.fetchStreamDetails(song.id);
 
-    if (streamUrl != null && streamUrl.isNotEmpty) {
-      try {
-        // Set Audio Source with custom headers to prevent CDN blocking
-        final audioSource = AudioSource.uri(
-          Uri.parse(streamUrl),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-          },
-        );
+    if (!streamResult['success']) {
+      _showErrorDiagnostics(
+        title: "Proxy Resolution Error",
+        songTitle: song.title,
+        songId: song.id,
+        streamUrl: "N/A",
+        rootCause: streamResult['error'],
+      );
+      if (mounted) setState(() => _isBuffering = false);
+      return;
+    }
 
-        await _audioPlayer.setAudioSource(audioSource);
-        await _audioPlayer.play();
-      } catch (e) {
-        _showToast("Playback failed for this track.");
-      }
-    } else {
-      _showToast("Unable to resolve stream from proxy server.");
+    String streamUrl = streamResult['streamUrl'];
+
+    try {
+      final audioSource = AudioSource.uri(
+        Uri.parse(streamUrl),
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+      );
+
+      await _audioPlayer.stop();
+      await _audioPlayer.setAudioSource(audioSource);
+      await _audioPlayer.play();
+    } catch (e) {
+      _showErrorDiagnostics(
+        title: "Audio Engine Stream Error",
+        songTitle: song.title,
+        songId: song.id,
+        streamUrl: streamUrl,
+        rootCause: e.toString(),
+      );
     }
 
     if (mounted) {
@@ -171,12 +190,74 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
     }
   }
 
-  void _showToast(String message) {
+  void _showErrorDiagnostics({
+    required String title,
+    required String songTitle,
+    required String songId,
+    required String streamUrl,
+    required String rootCause,
+  }) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 3),
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF282828),
+        title: Row(
+          children: [
+            const Icon(Icons.bug_report, color: Colors.redAccent),
+            const SizedBox(width: 8),
+            Text(title, style: const TextStyle(fontSize: 18, color: Colors.white)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDiagRow("Track:", songTitle),
+              _buildDiagRow("Song ID:", songId),
+              _buildDiagRow("Resolved Stream URL:", streamUrl),
+              const SizedBox(height: 10),
+              const Text("Root Cause Details:",
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  rootCause,
+                  style: const TextStyle(
+                      fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("CLOSE", style: TextStyle(color: Colors.purpleAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+          children: [
+            TextSpan(text: "$label ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            TextSpan(text: value),
+          ],
+        ),
       ),
     );
   }
