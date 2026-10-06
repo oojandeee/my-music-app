@@ -1,271 +1,93 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyMusicApp());
+  runApp(const MyApp());
 }
 
-class MyMusicApp extends StatelessWidget {
-  const MyMusicApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Music App',
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF121212),
-          elevation: 0,
-        ),
-      ),
-      home: const MusicHomeScreen(),
+      theme: ThemeData.dark(),
+      home: const YouTubeMusicPlayerScreen(),
     );
   }
 }
 
-class SongModel {
-  final String id;
-  final String title;
-  final String artist;
-  final String thumbnailUrl;
-
-  SongModel({
-    required this.id,
-    required this.title,
-    required this.artist,
-    required this.thumbnailUrl,
-  });
-
-  factory SongModel.fromJson(Map<String, dynamic> json) {
-    return SongModel(
-      id: json['id']?.toString() ?? '',
-      title: json['title'] ?? 'Unknown Track',
-      artist: json['artist'] ?? 'Unknown Artist',
-      thumbnailUrl: json['imageUrl'] ?? '',
-    );
-  }
-}
-
-class BackendMusicService {
-  static const String baseUrl = 'https://music-backend-c3o4.onrender.com';
-
-  static Future<List<SongModel>> searchSongs(String query) async {
-    final searchUrl = Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(query)}');
-
-    try {
-      final response = await http.get(searchUrl).timeout(const Duration(seconds: 10));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List results = data['results'] ?? [];
-        return results.map((item) => SongModel.fromJson(item)).toList();
-      }
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<Map<String, dynamic>> fetchStreamDetails(String songId) async {
-    final url = Uri.parse('$baseUrl/api/stream?id=$songId');
-
-    try {
-      final response = await http.get(url).timeout(const Duration(seconds: 10));
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200 && data['streamUrl'] != null) {
-        return {'success': true, 'streamUrl': data['streamUrl']};
-      } else {
-        return {'success': false, 'error': data['error'] ?? 'HTTP ${response.statusCode}'};
-      }
-    } catch (e) {
-      return {'success': false, 'error': e.toString()};
-    }
-  }
-}
-
-class MusicHomeScreen extends StatefulWidget {
-  const MusicHomeScreen({super.key});
+class YouTubeMusicPlayerScreen extends StatefulWidget {
+  const YouTubeMusicPlayerScreen({super.key});
 
   @override
-  State<MusicHomeScreen> createState() => _MusicHomeScreenState();
+  State<YouTubeMusicPlayerScreen> createState() => _YouTubeMusicPlayerScreenState();
 }
 
-class _MusicHomeScreenState extends State<MusicHomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
+class _YouTubeMusicPlayerScreenState extends State<YouTubeMusicPlayerScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final TextEditingController _searchController = TextEditingController(text: '2TSvac5aER4'); // Default YT Video ID (Prem Dhillon - Get At Me)
 
-  List<SongModel> _searchResults = [];
   bool _isLoading = false;
-  SongModel? _currentPlayingSong;
   bool _isPlaying = false;
-  bool _isBuffering = false;
+  String _statusMessage = 'Ready to play';
+
+  // Base URL for your deployed Render backend
+  final String _renderBackendUrl = 'https://music-backend-c3o4.onrender.com';
 
   @override
   void initState() {
     super.initState();
-    _initAudioPlayerListeners();
-  }
 
-  void _initAudioPlayerListeners() {
     _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-          _isBuffering = state.processingState == ProcessingState.buffering ||
-              state.processingState == ProcessingState.loading;
-        });
-      }
+      setState(() {
+        _isPlaying = state.playing;
+      });
     });
   }
 
-  Future<void> _performSearch(String query) async {
-    if (query.trim().isEmpty) return;
-
+  Future<void> _playYouTubeAudio(String videoId) async {
     setState(() {
       _isLoading = true;
-      _searchResults.clear();
+      _statusMessage = 'Fetching stream from Render server...';
     });
-
-    final results = await BackendMusicService.searchSongs(query);
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _searchResults = results;
-      });
-    }
-  }
-
-  Future<void> _playSong(SongModel song) async {
-    setState(() {
-      _currentPlayingSong = song;
-      _isBuffering = true;
-    });
-
-    final streamResult = await BackendMusicService.fetchStreamDetails(song.id);
-
-    if (!streamResult['success']) {
-      _showErrorDiagnostics(
-        title: "Proxy Resolution Error",
-        songTitle: song.title,
-        songId: song.id,
-        streamUrl: "N/A",
-        rootCause: streamResult['error'],
-      );
-      if (mounted) setState(() => _isBuffering = false);
-      return;
-    }
-
-    String streamUrl = streamResult['streamUrl'];
 
     try {
-      final audioSource = AudioSource.uri(
-        Uri.parse(streamUrl),
-        headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-      );
+      // Connect directly to Render proxy pipe stream endpoint
+      final String proxiedStreamUrl = 
+          '$_renderBackendUrl/api/youtube/stream?id=$videoId';
 
-      await _audioPlayer.stop();
-      await _audioPlayer.setAudioSource(audioSource);
+      await _audioPlayer.setUrl(proxiedStreamUrl);
       await _audioPlayer.play();
-    } catch (e) {
-      _showErrorDiagnostics(
-        title: "Audio Engine Stream Error",
-        songTitle: song.title,
-        songId: song.id,
-        streamUrl: streamUrl,
-        rootCause: e.toString(),
-      );
-    }
 
-    if (mounted) {
       setState(() {
-        _isBuffering = false;
+        _isLoading = false;
+        _statusMessage = 'Playing track';
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _statusMessage = 'Playback Error: $e';
       });
     }
   }
 
-  void _showErrorDiagnostics({
-    required String title,
-    required String songTitle,
-    required String songId,
-    required String streamUrl,
-    required String rootCause,
-  }) {
-    if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF282828),
-        title: Row(
-          children: [
-            const Icon(Icons.bug_report, color: Colors.redAccent),
-            const SizedBox(width: 8),
-            Text(title, style: const TextStyle(fontSize: 18, color: Colors.white)),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDiagRow("Track:", songTitle),
-              _buildDiagRow("Song ID:", songId),
-              _buildDiagRow("Resolved Stream URL:", streamUrl),
-              const SizedBox(height: 10),
-              const Text("Root Cause Details:",
-                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  rootCause,
-                  style: const TextStyle(
-                      fontFamily: 'monospace', fontSize: 12, color: Colors.greenAccent),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("CLOSE", style: TextStyle(color: Colors.purpleAccent)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiagRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(color: Colors.white70, fontSize: 13),
-          children: [
-            TextSpan(text: "$label ", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            TextSpan(text: value),
-          ],
-        ),
-      ),
-    );
+  Future<void> _togglePlayPause() async {
+    if (_isPlaying) {
+      await _audioPlayer.pause();
+    } else {
+      if (_audioPlayer.duration == null) {
+        await _playYouTubeAudio(_searchController.text.trim());
+      } else {
+        await _audioPlayer.play();
+      }
+    }
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
     _audioPlayer.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -273,164 +95,38 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Music Player'),
+        title: const Text('YouTube Stream Player'),
       ),
-      body: SafeArea(
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search song or artist...',
-                  prefixIcon: const Icon(Icons.search, color: Colors.white),
-                  filled: true,
-                  fillColor: const Color(0xFF282828),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onSubmitted: _performSearch,
+            TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                labelText: 'YouTube Video ID or URL',
+                border: OutlineInputBorder(),
+                hintText: 'e.g. 2TSvac5aER4',
               ),
             ),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.purpleAccent),
-                    )
-                  : _searchResults.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No results found. Type a query and tap search.',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: _searchResults.length,
-                          itemBuilder: (context, index) {
-                            final song = _searchResults[index];
-                            final bool isSelected =
-                                _currentPlayingSong?.id == song.id;
-
-                            return ListTile(
-                              leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: Image.network(
-                                  song.thumbnailUrl,
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (c, e, s) =>
-                                      const Icon(Icons.music_note, size: 30),
-                                ),
-                              ),
-                              title: Text(
-                                song.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: isSelected ? Colors.purpleAccent : Colors.white,
-                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                ),
-                              ),
-                              subtitle: Text(
-                                song.artist,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                              trailing: isSelected && _isBuffering
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.purpleAccent,
-                                      ),
-                                    )
-                                  : Icon(
-                                      isSelected && _isPlaying
-                                          ? Icons.pause_circle_filled
-                                          : Icons.play_circle_fill,
-                                      color: Colors.purpleAccent,
-                                      size: 32,
-                                    ),
-                              onTap: () => _playSong(song),
-                            );
-                          },
-                        ),
+            const SizedBox(height: 20),
+            Text(
+              _statusMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
             ),
-            if (_currentPlayingSong != null) _buildMiniPlayer(),
+            const SizedBox(height: 30),
+            if (_isLoading)
+              const CircularProgressIndicator()
+            else
+              IconButton(
+                iconSize: 64,
+                icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill),
+                onPressed: _togglePlayPause,
+              ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildMiniPlayer() {
-    return Container(
-      color: const Color(0xFF212121),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Image.network(
-              _currentPlayingSong!.thumbnailUrl,
-              width: 45,
-              height: 45,
-              fit: BoxFit.cover,
-              errorBuilder: (c, e, s) => const Icon(Icons.music_note),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _currentPlayingSong!.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  _currentPlayingSong!.artist,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          if (_isBuffering)
-            const Padding(
-              padding: EdgeInsets.all(8.0),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.purpleAccent),
-              ),
-            )
-          else
-            IconButton(
-              icon: Icon(
-                _isPlaying ? Icons.pause : Icons.play_arrow,
-                color: Colors.white,
-                size: 30,
-              ),
-              onPressed: () {
-                if (_isPlaying) {
-                  _audioPlayer.pause();
-                } else {
-                  _audioPlayer.play();
-                }
-              },
-            ),
-        ],
       ),
     );
   }
