@@ -33,81 +33,50 @@ class SongModel {
   final String title;
   final String artist;
   final String thumbnailUrl;
-  final String streamUrl;
 
   SongModel({
     required this.id,
     required this.title,
     required this.artist,
     required this.thumbnailUrl,
-    required this.streamUrl,
   });
 
   factory SongModel.fromJson(Map<String, dynamic> json) {
     return SongModel(
       id: json['id']?.toString() ?? '',
-      title: _cleanText(json['title'] ?? 'Unknown Track'),
-      artist: _cleanText(json['artist'] ?? 'Unknown Artist'),
-      thumbnailUrl: json['imageUrl'] ?? json['thumbnailUrl'] ?? '',
-      streamUrl: json['streamUrl'] ?? '',
+      title: json['title'] ?? 'Unknown Track',
+      artist: json['artist'] ?? 'Unknown Artist',
+      thumbnailUrl: json['imageUrl'] ?? '',
     );
-  }
-
-  static String _cleanText(String text) {
-    return text
-        .replaceAll('&quot;', '"')
-        .replaceAll('&amp;', '&')
-        .replaceAll('&#039;', "'");
   }
 }
 
 class BackendMusicService {
-  // Live Render Proxy Base URL
+  // Your Live Render Proxy URL
   static const String baseUrl = 'https://music-backend-c3o4.onrender.com';
 
-  // Search songs via open Saavn search API
+  // Search songs via Proxy
   static Future<List<SongModel>> searchSongs(String query) async {
-    final searchUrl = Uri.parse(
-      'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(query)}&limit=20',
-    );
+    final searchUrl = Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(query)}');
 
     try {
-      final response = await http.get(searchUrl).timeout(const Duration(seconds: 8));
+      final response = await http.get(searchUrl).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final List results = data['data']?['results'] ?? [];
-
-        List<SongModel> songs = [];
-        for (var item in results) {
-          String songId = item['id']?.toString() ?? '';
-          if (songId.isNotEmpty) {
-            List images = item['image'] ?? [];
-            String thumb = images.isNotEmpty ? images.last['url'] : '';
-
-            songs.add(
-              SongModel(
-                id: songId,
-                title: SongModel._cleanText(item['name'] ?? 'Unknown Track'),
-                artist: SongModel._cleanText(item['primaryArtists'] ?? 'Unknown Artist'),
-                thumbnailUrl: thumb,
-                streamUrl: '', // Stream URL will be fetched on demand via backend proxy
-              ),
-            );
-          }
-        }
-        return songs;
+        final List results = data['results'] ?? [];
+        return results.map((item) => SongModel.fromJson(item)).toList();
       }
     } catch (_) {}
     return [];
   }
 
-  // Fetch verified high-quality audio stream link from Render proxy backend
+  // Fetch stream link via Proxy
   static Future<String?> fetchStreamUrl(String songId) async {
     final url = Uri.parse('$baseUrl/api/stream?id=$songId');
 
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 12));
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -177,7 +146,6 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
       _isBuffering = true;
     });
 
-    // Request stream URL from backend proxy server
     String? streamUrl = await BackendMusicService.fetchStreamUrl(song.id);
 
     if (streamUrl != null && streamUrl.isNotEmpty) {
@@ -246,60 +214,67 @@ class _MusicHomeScreenState extends State<MusicHomeScreen> {
                   ? const Center(
                       child: CircularProgressIndicator(color: Colors.purpleAccent),
                     )
-                  : ListView.builder(
-                      itemCount: _searchResults.length,
-                      itemBuilder: (context, index) {
-                        final song = _searchResults[index];
-                        final bool isSelected =
-                            _currentPlayingSong?.id == song.id;
+                  : _searchResults.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'No results found. Type a query and tap search.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: _searchResults.length,
+                          itemBuilder: (context, index) {
+                            final song = _searchResults[index];
+                            final bool isSelected =
+                                _currentPlayingSong?.id == song.id;
 
-                        return ListTile(
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: Image.network(
-                              song.thumbnailUrl,
-                              width: 50,
-                              height: 50,
-                              fit: BoxFit.cover,
-                              errorBuilder: (c, e, s) =>
-                                  const Icon(Icons.music_note, size: 30),
-                            ),
-                          ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: isSelected ? Colors.purpleAccent : Colors.white,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
-                          subtitle: Text(
-                            song.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.grey),
-                          ),
-                          trailing: isSelected && _isBuffering
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.purpleAccent,
-                                  ),
-                                )
-                              : Icon(
-                                  isSelected && _isPlaying
-                                      ? Icons.pause_circle_filled
-                                      : Icons.play_circle_fill,
-                                  color: Colors.purpleAccent,
-                                  size: 32,
+                            return ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.network(
+                                  song.thumbnailUrl,
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (c, e, s) =>
+                                      const Icon(Icons.music_note, size: 30),
                                 ),
-                          onTap: () => _playSong(song),
-                        );
-                      },
-                    ),
+                              ),
+                              title: Text(
+                                song.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: isSelected ? Colors.purpleAccent : Colors.white,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                              subtitle: Text(
+                                song.artist,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                              trailing: isSelected && _isBuffering
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.purpleAccent,
+                                      ),
+                                    )
+                                  : Icon(
+                                      isSelected && _isPlaying
+                                          ? Icons.pause_circle_filled
+                                          : Icons.play_circle_fill,
+                                      color: Colors.purpleAccent,
+                                      size: 32,
+                                    ),
+                              onTap: () => _playSong(song),
+                            );
+                          },
+                        ),
             ),
             if (_currentPlayingSong != null) _buildMiniPlayer(),
           ],
