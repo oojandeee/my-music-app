@@ -1,5 +1,5 @@
 name: youtube_stream_app
-description: "A Flutter app to play YouTube streams using Invidious API."
+description: "A Flutter app to play YouTube streams directly using API extraction."
 publish_to: 'none'
 version: 1.0.0+1
 
