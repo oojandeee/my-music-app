@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Force compileSdk 36 in Gradle
+      - name: Update compileSdk in Gradle
         run: |
           sed -i 's/compileSdkVersion .*/compileSdk 36/' android/app/build.gradle || true
           sed -i 's/compileSdk .*/compileSdk 36/' android/app/build.gradle || true
@@ -36,7 +36,7 @@ jobs:
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v3
         with:
           name: release-apk
