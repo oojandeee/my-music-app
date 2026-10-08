@@ -1,5 +1,5 @@
 name: youtube_stream_app
-description: "A clean YouTube stream app."
+description: "Music and local media player app."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,7 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  webview_flutter: ^4.7.0
+  http: ^1.2.0
+  file_picker: ^8.0.0
+  just_audio: ^0.9.36
 
 dev_dependencies:
   flutter_test:
