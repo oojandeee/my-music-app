@@ -1,7 +1,6 @@
-name: music_app
-description: "A streaming music application using direct JioSaavn decryption."
+name: youtube_stream_app
+description: "A Flutter app to play YouTube streams using Invidious API."
 publish_to: 'none'
-
 version: 1.0.0+1
 
 environment:
@@ -10,20 +9,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # HTTP Requests
   http: ^1.2.0
-
-  # Audio Playback
-  just_audio: ^0.9.36
-
-  # UI Icons
-  cupertino_icons: ^1.0.6
+  video_player: ^2.8.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   flutter_lints: ^3.0.0
 
 flutter:
