@@ -1,5 +1,5 @@
 name: youtube_stream_app
-description: "Music and local media player app."
+description: "iTunes search and audio player app."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -10,8 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
-  file_picker: 6.1.1
-  just_audio: ^0.9.36
+  audioplayers: ^6.0.0
 
 dev_dependencies:
   flutter_test:
