@@ -1,8 +1,7 @@
 import 'dart:convert';
-import 'package:file_picker/file_picker.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:just_audio/just_audio.dart';
 
 void main() {
   runApp(const MyApp());
@@ -13,14 +12,12 @@ class TrackItem {
   final String title;
   final String artist;
   final String url;
-  final bool isLocal;
 
   TrackItem({
     required this.id,
     required this.title,
     required this.artist,
     required this.url,
-    this.isLocal = false,
   });
 }
 
@@ -55,7 +52,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
   int _currentIndex = 0;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
-  // 4 Boxes storing local/custom tracks
   final List<List<TrackItem>> _boxes = [[], [], [], []];
   final List<TrackItem> _likedSongs = [];
 
@@ -65,14 +61,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
   @override
   void initState() {
     super.initState();
-    _initAudioPlayer();
-  }
-
-  void _initAudioPlayer() {
-    _audioPlayer.playerStateStream.listen((state) {
+    _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() {
-          _isPlaying = state.playing;
+          _isPlaying = state == PlayerState.playing;
         });
       }
     });
@@ -86,15 +78,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Future<void> _playTrack(TrackItem track) async {
     try {
-      if (track.isLocal) {
-        await _audioPlayer.setFilePath(track.url);
-      } else {
-        await _audioPlayer.setUrl(track.url);
-      }
+      await _audioPlayer.stop();
+      await _audioPlayer.play(UrlSource(track.url));
       setState(() {
         _currentPlayingTrack = track;
       });
-      _audioPlayer.play();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error playing track: $e')),
@@ -117,30 +105,57 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return _likedSongs.any((item) => item.id == track.id);
   }
 
-  Future<void> _pickFileForBox(int boxIndex) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mp3', 'wav', 'm4a', 'mp4'],
-      allowMultiple: true,
+  void _addCustomUrlToBox(int boxIndex) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF181824),
+        title: Text('Add Song URL to Box ${boxIndex + 1}'),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Paste direct audio MP3 link',
+            hintStyle: TextStyle(color: Colors.white30),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final url = controller.text.trim();
+              if (url.isNotEmpty) {
+                setState(() {
+                  _boxes[boxIndex].add(
+                    TrackItem(
+                      id: url,
+                      title: 'Track ${_boxes[boxIndex].length + 1}',
+                      artist: 'Custom Stream',
+                      url: url,
+                    ),
+                  );
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
     );
+  }
 
-    if (result != null && result.files.isNotEmpty) {
-      setState(() {
-        for (final file in result.files) {
-          if (file.path != null) {
-            _boxes[boxIndex].add(
-              TrackItem(
-                id: file.path!,
-                title: file.name,
-                artist: 'Local Media',
-                url: file.path!,
-                isLocal: true,
-              ),
-            );
-          }
-        }
-      });
-    }
+  void _addITunesTrackToBox(TrackItem track, int boxIndex) {
+    setState(() {
+      _boxes[boxIndex].add(track);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added "${track.title}" to Box ${boxIndex + 1}')),
+    );
   }
 
   @override
@@ -168,7 +183,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= HOME TAB =================
   Widget _buildHomeScreen() {
     return Column(
       children: [
@@ -226,7 +240,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         child: IconButton(
                           iconSize: 48,
                           icon: const Icon(Icons.add_circle_outline, color: Colors.deepPurpleAccent),
-                          onPressed: () => _pickFileForBox(index),
+                          onPressed: () => _addCustomUrlToBox(index),
                         ),
                       )
                     else
@@ -273,7 +287,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         right: 4,
                         child: IconButton(
                           icon: const Icon(Icons.add, color: Colors.deepPurpleAccent, size: 22),
-                          onPressed: () => _pickFileForBox(index),
+                          onPressed: () => _addCustomUrlToBox(index),
                         ),
                       ),
                   ],
@@ -327,12 +341,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= SEARCH TAB (iTunes 30s Previews) =================
   Widget _buildSearchScreen() {
-    return const ITunesSearchWidget();
+    return ITunesSearchWidget(
+      onPlayTrack: _playTrack,
+      onToggleLike: _toggleLike,
+      isLiked: _isLiked,
+      onAddToBox: _addITunesTrackToBox,
+    );
   }
 
-  // ================= PLAYLIST TAB =================
   Widget _buildPlaylistScreen() {
     return Center(
       child: Column(
@@ -354,8 +371,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
             onPressed: () {
               if (_isPlaying) {
                 _audioPlayer.pause();
-              } else {
-                _audioPlayer.play();
+              } else if (_currentPlayingTrack != null) {
+                _audioPlayer.resume();
               }
             },
           ),
@@ -366,7 +383,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
 }
 
 class ITunesSearchWidget extends StatefulWidget {
-  const ITunesSearchWidget({super.key});
+  final Function(TrackItem) onPlayTrack;
+  final Function(TrackItem) onToggleLike;
+  final bool Function(TrackItem) isLiked;
+  final Function(TrackItem, int) onAddToBox;
+
+  const ITunesSearchWidget({
+    super.key,
+    required this.onPlayTrack,
+    required this.onToggleLike,
+    required this.isLiked,
+    required this.onAddToBox,
+  });
 
   @override
   State<ITunesSearchWidget> createState() => _ITunesSearchWidgetState();
@@ -425,13 +453,47 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
               itemCount: _searchResults.length,
               itemBuilder: (context, index) {
                 final item = _searchResults[index];
+                final track = TrackItem(
+                  id: item['trackId']?.toString() ?? index.toString(),
+                  title: item['trackName'] ?? 'Unknown Track',
+                  artist: item['artistName'] ?? 'Unknown Artist',
+                  url: item['previewUrl'] ?? '',
+                );
+
+                final liked = widget.isLiked(track);
+
                 return ListTile(
                   leading: item['artworkUrl100'] != null
                       ? Image.network(item['artworkUrl100'], width: 50, height: 50, fit: BoxFit.cover)
                       : const Icon(Icons.music_note),
-                  title: Text(item['trackName'] ?? 'Unknown Track'),
-                  subtitle: Text(item['artistName'] ?? 'Unknown Artist'),
-                  trailing: const Icon(Icons.play_arrow, color: Colors.deepPurpleAccent),
+                  title: Text(track.title),
+                  subtitle: Text(track.artist),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          liked ? Icons.favorite : Icons.favorite_border,
+                          color: liked ? Colors.redAccent : Colors.white38,
+                        ),
+                        onPressed: () {
+                          widget.onToggleLike(track);
+                          setState(() {});
+                        },
+                      ),
+                      PopupMenuButton<int>(
+                        icon: const Icon(Icons.add_box, color: Colors.deepPurpleAccent),
+                        onSelected: (boxIndex) => widget.onAddToBox(track, boxIndex),
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(value: 0, child: Text('Add to Box 1')),
+                          const PopupMenuItem(value: 1, child: Text('Add to Box 2')),
+                          const PopupMenuItem(value: 2, child: Text('Add to Box 3')),
+                          const PopupMenuItem(value: 3, child: Text('Add to Box 4')),
+                        ],
+                      ),
+                    ],
+                  ),
+                  onTap: () => widget.onPlayTrack(track),
                 );
               },
             ),
