@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:video_player/video_player.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 void main() {
   runApp(const MyApp());
@@ -27,53 +25,20 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class YouTubeStreamService {
-  static final List<String> _instances = [
-    'https://inv.tux.pizza',
-    'https://invidious.nerdvpn.de',
-    'https://invidious.drgns.space',
-  ];
+class YouTubePlayerScreen extends StatefulWidget {
+  const YouTubePlayerScreen({super.key});
 
-  static Future<Map<String, String>> getStreamDetails(String input) async {
-    final videoId = _extractVideoId(input);
-    if (videoId == null) {
-      throw Exception('Invalid YouTube URL or Video ID');
-    }
+  @override
+  State<YouTubePlayerScreen> createState() => _YouTubePlayerScreenState();
+}
 
-    for (final instance in _instances) {
-      try {
-        final response = await http
-            .get(Uri.parse('$instance/api/v1/videos/$videoId'))
-            .timeout(const Duration(seconds: 8));
+class _YouTubePlayerScreenState extends State<YouTubePlayerScreen> {
+  final TextEditingController _urlController = TextEditingController();
+  WebViewController? _webViewController;
+  bool _isPlaying = false;
+  String? _errorMessage;
 
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          final formatStreams = data['formatStreams'] as List<dynamic>?;
-          final title = data['title'] as String? ?? 'YouTube Stream';
-
-          if (formatStreams != null && formatStreams.isNotEmpty) {
-            final stream = formatStreams.firstWhere(
-              (item) => item['container'] == 'mp4',
-              orElse: () => formatStreams.first,
-            );
-
-            final streamUrl = stream['url'] as String?;
-            if (streamUrl != null && streamUrl.isNotEmpty) {
-              return {
-                'url': streamUrl,
-                'title': title,
-              };
-            }
-          }
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-    throw Exception('Failed to extract stream from API servers.');
-  }
-
-  static String? _extractVideoId(String input) {
+  String? _extractVideoId(String input) {
     final cleanInput = input.trim();
     if (cleanInput.length == 11 && !cleanInput.contains('/')) {
       return cleanInput;
@@ -84,67 +49,35 @@ class YouTubeStreamService {
     final match = regExp.firstMatch(cleanInput);
     return match?.group(1);
   }
-}
 
-class YouTubePlayerScreen extends StatefulWidget {
-  const YouTubePlayerScreen({super.key});
-
-  @override
-  State<YouTubePlayerScreen> createState() => _YouTubePlayerScreenState();
-}
-
-class _YouTubePlayerScreenState extends State<YouTubePlayerScreen> {
-  final TextEditingController _urlController = TextEditingController();
-  VideoPlayerController? _videoController;
-
-  bool _isLoading = false;
-  String? _errorMessage;
-  String? _videoTitle;
-
-  Future<void> _processAndPlay() async {
-    final input = _urlController.text.trim();
-    if (input.isEmpty) return;
+  void _loadStream() {
+    final videoId = _extractVideoId(_urlController.text);
+    if (videoId == null) {
+      setState(() {
+        _errorMessage = 'Invalid YouTube URL or Video ID';
+      });
+      return;
+    }
 
     FocusScope.of(context).unfocus();
 
+    final embedUrl = 'https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1';
+
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF1E1E2A))
+      ..loadRequest(Uri.parse(embedUrl));
+
     setState(() {
-      _isLoading = true;
       _errorMessage = null;
-      _videoTitle = null;
+      _webViewController = controller;
+      _isPlaying = true;
     });
-
-    await _videoController?.dispose();
-    _videoController = null;
-
-    try {
-      final streamData = await YouTubeStreamService.getStreamDetails(input);
-      final streamUrl = streamData['url']!;
-      final title = streamData['title']!;
-
-      final controller = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
-      await controller.initialize();
-
-      setState(() {
-        _videoController = controller;
-        _videoTitle = title;
-      });
-
-      controller.play();
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString().replaceAll('Exception: ', '');
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
   @override
   void dispose() {
     _urlController.dispose();
-    _videoController?.dispose();
     super.dispose();
   }
 
@@ -171,25 +104,21 @@ class _YouTubePlayerScreenState extends State<YouTubePlayerScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: _buildPlayerArea(),
+                child: _isPlaying && _webViewController != null
+                    ? WebViewWidget(controller: _webViewController!)
+                    : const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.play_circle_outline, size: 64, color: Colors.white24),
+                            SizedBox(height: 8),
+                            Text('Enter URL or Video ID to play', style: TextStyle(color: Colors.white30)),
+                          ],
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 24),
-
-            if (_videoTitle != null) ...[
-              Text(
-                _videoTitle!,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-            ],
 
             TextField(
               controller: _urlController,
@@ -216,7 +145,7 @@ class _YouTubePlayerScreenState extends State<YouTubePlayerScreen> {
 
             if (_errorMessage != null) ...[
               Text(
-                'Playback Error: $_errorMessage',
+                _errorMessage!,
                 style: const TextStyle(color: Colors.redAccent, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
@@ -227,95 +156,26 @@ class _YouTubePlayerScreenState extends State<YouTubePlayerScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _processAndPlay,
+                onPressed: _loadStream,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurpleAccent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                icon: _isLoading
-                    ? const SizedBox.shrink()
-                    : const Icon(Icons.play_arrow, color: Colors.white),
-                label: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        'Play Stream',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlayerArea() {
-    if (_isLoading) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: Colors.deepPurpleAccent),
-            SizedBox(height: 12),
-            Text('Extracting stream...', style: TextStyle(color: Colors.white70)),
-          ],
-        ),
-      );
-    }
-
-    if (_videoController != null && _videoController!.value.isInitialized) {
-      return AspectRatio(
-        aspectRatio: _videoController!.value.aspectRatio,
-        child: Stack(
-          alignment: Alignment.bottomCenter,
-          children: [
-            VideoPlayer(_videoController!),
-            VideoProgressIndicator(
-              _videoController!,
-              allowScrubbing: true,
-              colors: const VideoProgressColors(
-                playedColor: Colors.deepPurpleAccent,
-                bufferedColor: Colors.white24,
-                backgroundColor: Colors.black26,
-              ),
-            ),
-            Center(
-              child: IconButton(
-                iconSize: 50,
-                icon: Icon(
-                  _videoController!.value.isPlaying
-                      ? Icons.pause_circle_filled
-                      : Icons.play_circle_filled,
-                  color: Colors.white.withOpacity(0.8),
+                icon: const Icon(Icons.play_arrow, color: Colors.white),
+                label: const Text(
+                  'Play Stream',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
-                onPressed: () {
-                  setState(() {
-                    _videoController!.value.isPlaying
-                        ? _videoController!.pause()
-                        : _videoController!.play();
-                  });
-                },
               ),
             ),
           ],
         ),
-      );
-    }
-
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.play_circle_outline, size: 64, color: Colors.white24),
-          SizedBox(height: 8),
-          Text('Enter URL or Video ID to start', style: TextStyle(color: Colors.white30)),
-        ],
       ),
     );
   }
