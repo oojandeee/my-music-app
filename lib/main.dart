@@ -294,7 +294,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         children: [
                           const Text(
                             'PLAYING FROM PODCAST / MEDIA',
-                            style: TextStyle(fontSize: 10, letterSpacing: 1, color: Colors.white50),
+                            style: TextStyle(fontSize: 10, letterSpacing: 1, color: Colors.white54),
                           ),
                           Text(
                             track.artist,
@@ -349,7 +349,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       IconButton(
                         icon: Icon(
                           _isLiked(track) ? Icons.favorite : Icons.favorite_border,
-                          color: _isLiked(track) ? Colors.redAccent : Colors.white50,
+                          color: _isLiked(track) ? Colors.redAccent : Colors.white54,
                           size: 28,
                         ),
                         onPressed: () {
@@ -378,8 +378,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.white50)),
-                        Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.white50)),
+                        Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                        Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.white54)),
                       ],
                     ),
                   ),
@@ -465,7 +465,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               const Text('Your Library', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.menu, size: 28),
-                backgroundColor: const Color(0xFF242424),
+                color: const Color(0xFF242424),
                 onSelected: (val) {
                   if (val == 'new') {
                     setState(() {
