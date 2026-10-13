@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
-import 'package:video_player/video_player.dart';
 
 void main() {
   runApp(const MyApp());
@@ -64,10 +63,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   final List<BoxModel> _boxes = [
-    BoxModel(name: 'Discover Weekly'),
-    BoxModel(name: 'golden hour'),
-    BoxModel(name: 'big on the internet'),
-    BoxModel(name: 'Classic Road Trip'),
+    BoxModel(name: 'Discover Weekly', tracks: [
+      TrackItem(id: '1', title: 'ASTARR (OFFICIAL VIDEO)', artist: 'Prem Dhillon', url: ''),
+    ]),
+    BoxModel(name: 'golden hour', tracks: []),
+    BoxModel(name: 'big on the internet', tracks: []),
+    BoxModel(name: 'Classic Road Trip', tracks: []),
   ];
 
   final List<TrackItem> _playlist = [];
@@ -88,17 +89,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   void _initAudioListeners() {
     _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isPlaying = state.playing;
-        });
-      }
+      if (mounted) setState(() => _isPlaying = state.playing);
     });
-
     _audioPlayer.positionStream.listen((pos) {
       if (mounted) setState(() => _position = pos);
     });
-
     _audioPlayer.durationStream.listen((dur) {
       if (mounted && dur != null) setState(() => _duration = dur);
     });
@@ -111,10 +106,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   Future<void> _playTrack(TrackItem track) async {
+    if (track.url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error playing track: (0) Source error')),
+      );
+      return;
+    }
+
     await _audioPlayer.stop();
-    setState(() {
-      _currentPlayingTrack = track;
-    });
+    setState(() => _currentPlayingTrack = track);
 
     try {
       await _audioPlayer.setUrl(track.url);
@@ -148,12 +148,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF242424),
-        title: Text('Add Stream to ${_boxes[boxIndex].name}'),
+        title: Text('Add Song to ${_boxes[boxIndex].name}'),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(
-            hintText: 'Paste direct audio/stream URL',
+            hintText: 'Enter song name or stream URL',
             hintStyle: TextStyle(color: Colors.white38),
           ),
         ),
@@ -164,15 +164,19 @@ class _MainTabScreenState extends State<MainTabScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final url = controller.text.trim();
-              if (url.isNotEmpty) {
+              String input = controller.text.trim();
+              if (input.isNotEmpty) {
+                // Clean up filename or path input nicely
+                String cleanName = input.split('/').last.split('\\').last;
+                cleanName = cleanName.replaceAll(RegExp(r'_MP3.*|_m4a.*|\.[^.]+$'), '').replaceAll('_', ' ');
+
                 setState(() {
                   _boxes[boxIndex].tracks.add(
                         TrackItem(
-                          id: url,
-                          title: 'Custom Track ${_boxes[boxIndex].tracks.length + 1}',
+                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                          title: cleanName,
                           artist: 'Custom Stream',
-                          url: url,
+                          url: input.startsWith('http') ? input : '',
                         ),
                       );
                 });
@@ -196,22 +200,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Enter box name',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
-                setState(() {
-                  _boxes[index].name = controller.text.trim();
-                });
+                setState(() => _boxes[index].name = controller.text.trim());
               }
               Navigator.pop(ctx);
             },
@@ -230,10 +225,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         title: const Text('Remove Box'),
         content: Text('Do you really want to remove "${_boxes[index].name}"?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('No'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('No')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
@@ -270,18 +262,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(ctx),
                       ),
-                      Column(
-                        children: [
-                          const Text(
-                            'PLAYING FROM PODCAST / MEDIA',
-                            style: TextStyle(fontSize: 10, letterSpacing: 1, color: Colors.white54),
-                          ),
-                          Text(
-                            track.artist,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
+                      Text(track.artist, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       const Icon(Icons.more_vert),
                     ],
                   ),
@@ -293,9 +274,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         color: const Color(0xFF1E1E1E),
                         child: track.artworkUrl != null
                             ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
-                            : const Center(
-                                child: Icon(Icons.music_note, size: 100, color: Colors.white24),
-                              ),
+                            : const Center(child: Icon(Icons.music_note, size: 100, color: Colors.white24)),
                       ),
                     ),
                   ),
@@ -307,17 +286,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              track.title,
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            Text(track.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold), maxLines: 1),
                             const SizedBox(height: 4),
-                            Text(
-                              track.artist,
-                              style: const TextStyle(fontSize: 14, color: Colors.white60),
-                            ),
+                            Text(track.artist, style: const TextStyle(fontSize: 14, color: Colors.white60)),
                           ],
                         ),
                       ),
@@ -330,6 +301,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         onPressed: () {
                           _toggleLike(track);
                           setModalState(() {});
+                          setState(() {});
                         },
                       ),
                     ],
@@ -340,23 +312,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     inactiveColor: Colors.white24,
                     min: 0.0,
                     max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
-                    value: _position.inSeconds.toDouble().clamp(
-                          0.0,
-                          _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
-                        ),
-                    onChanged: (val) {
-                      _audioPlayer.seek(Duration(seconds: val.toInt()));
-                    },
+                    value: _position.inSeconds.toDouble().clamp(0.0, _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0),
+                    onChanged: (val) => _audioPlayer.seek(Duration(seconds: val.toInt())),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                        Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.white54)),
-                      ],
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_formatDuration(_position), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                      Text(_formatDuration(_duration), style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   Row(
@@ -385,7 +349,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
                 ],
               ),
             );
@@ -441,13 +404,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 color: const Color(0xFF242424),
                 onSelected: (val) {
                   if (val == 'new') {
-                    setState(() {
-                      _boxes.add(BoxModel(name: 'New Box ${_boxes.length + 1}'));
-                    });
+                    setState(() => _boxes.add(BoxModel(name: 'New Box ${_boxes.length + 1}')));
                   } else if (val == 'remove') {
-                    setState(() {
-                      _isRemoveMode = !_isRemoveMode;
-                    });
+                    setState(() => _isRemoveMode = !_isRemoveMode);
                   }
                 },
                 itemBuilder: (ctx) => [
@@ -474,9 +433,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 2.8,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.1, // True square box shape
             ),
             itemCount: _boxes.length,
             itemBuilder: (context, index) {
@@ -487,45 +446,34 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   if (_isRemoveMode) {
                     _confirmDeleteBox(index);
                   } else {
-                    _openBoxDetailDialog(box, index);
+                    _openSpotifyStylePlaylist(box, index);
                   }
                 },
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF282828),
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Row(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        width: 50,
-                        height: double.infinity,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF383838),
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(6),
-                            bottomLeft: Radius.circular(6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Icon(Icons.music_note, color: Colors.greenAccent, size: 28),
+                          IconButton(
+                            icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
+                            onPressed: () => _renameBox(index),
                           ),
-                        ),
-                        child: Center(
-                          child: IconButton(
-                            icon: const Icon(Icons.add, color: Colors.white70, size: 20),
-                            onPressed: () => _addCustomUrlToBox(index),
-                          ),
-                        ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          box.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
-                        onPressed: () => _renameBox(index),
+                      Text(
+                        box.name,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
@@ -538,57 +486,114 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  void _openBoxDetailDialog(BoxModel box, int boxIndex) {
+  void _openSpotifyStylePlaylist(BoxModel box, int boxIndex) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF181818),
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF121212),
       builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.9,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(box.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  IconButton(
-                    icon: const Icon(Icons.add, color: Colors.greenAccent),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _addCustomUrlToBox(boxIndex);
-                    },
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                      const Icon(Icons.more_vert),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(box.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text('Custom curated playlist', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 28, color: Colors.white70),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _addCustomUrlToBox(boxIndex);
+                          setState(() {});
+                        },
+                      ),
+                      const Spacer(),
+                      FloatingActionButton(
+                        backgroundColor: Colors.greenAccent,
+                        mini: true,
+                        onPressed: () {
+                          if (box.tracks.isNotEmpty) {
+                            Navigator.pop(ctx);
+                            _playTrack(box.tracks.first);
+                          }
+                        },
+                        child: const Icon(Icons.play_arrow, color: Colors.black),
+                      ),
+                    ],
+                  ),
+                  const Divider(color: Colors.white12, height: 24),
+                  Expanded(
+                    child: box.tracks.isEmpty
+                        ? const Center(child: Text('No tracks in this playlist.'))
+                        : ListView.builder(
+                            itemCount: box.tracks.length,
+                            itemBuilder: (context, index) {
+                              final track = box.tracks[index];
+                              final liked = _isLiked(track);
+
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF282828),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(Icons.music_note, color: Colors.white54),
+                                ),
+                                title: Text(track.title, maxLines: 1),
+                                subtitle: Text(track.artist, maxLines: 1),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        liked ? Icons.favorite : Icons.favorite_border,
+                                        color: liked ? Colors.redAccent : Colors.white38,
+                                      ),
+                                      onPressed: () {
+                                        _toggleLike(track);
+                                        setModalState(() {});
+                                        setState(() {});
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.more_vert, color: Colors.white38),
+                                      onPressed: () {},
+                                    ),
+                                  ],
+                                ),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _playTrack(track);
+                                },
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white12),
-              Expanded(
-                child: box.tracks.isEmpty
-                    ? const Center(child: Text('No tracks in this box.'))
-                    : ListView.builder(
-                        itemCount: box.tracks.length,
-                        itemBuilder: (context, index) {
-                          final track = box.tracks[index];
-                          return ListTile(
-                            title: Text(track.title),
-                            subtitle: Text(track.artist),
-                            trailing: IconButton(
-                              icon: Icon(
-                                _isLiked(track) ? Icons.favorite : Icons.favorite_border,
-                                color: _isLiked(track) ? Colors.redAccent : Colors.white38,
-                              ),
-                              onPressed: () => _toggleLike(track),
-                            ),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _playTrack(track);
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -601,9 +606,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       onToggleLike: _toggleLike,
       isLiked: _isLiked,
       onAddToPlaylist: (track) {
-        setState(() {
-          _playlist.add(track);
-        });
+        setState(() => _playlist.add(track));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Added "${track.title}" to PLAYLIST')),
         );
@@ -645,16 +648,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     itemCount: _playlist.length,
                     itemBuilder: (context, index) {
                       final track = _playlist[index];
+                      final liked = _isLiked(track);
+
                       return ListTile(
                         leading: const Icon(Icons.music_note, color: Colors.greenAccent),
                         title: Text(track.title),
                         subtitle: Text(track.artist),
                         trailing: IconButton(
                           icon: Icon(
-                            _isLiked(track) ? Icons.favorite : Icons.favorite_border,
-                            color: _isLiked(track) ? Colors.redAccent : Colors.white38,
+                            liked ? Icons.favorite : Icons.favorite_border,
+                            color: liked ? Colors.redAccent : Colors.white38,
                           ),
-                          onPressed: () => _toggleLike(track),
+                          onPressed: () {
+                            _toggleLike(track);
+                            setState(() {});
+                          },
                         ),
                         onTap: () => _playTrack(track),
                       );
@@ -700,6 +708,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                   onPressed: () {
                                     _toggleLike(track);
                                     setModalState(() {});
+                                    setState(() {});
                                   },
                                 ),
                                 onTap: () {
@@ -754,13 +763,17 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() {
-          _searchResults = data['results'] ?? [];
-        });
+        if (mounted) {
+          setState(() {
+            _searchResults = data['results'] ?? [];
+            _isLoading = false;
+          });
+        }
+        return;
       }
     } catch (_) {}
 
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
