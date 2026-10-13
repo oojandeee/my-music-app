@@ -25,6 +25,11 @@ jobs:
           flutter-version: '3.24.x'
           channel: 'stable'
 
+      - name: Clean and Recreate Android Platform Files
+        run: |
+          rm -rf android
+          flutter create . --platforms=android --project-name=my_music_app
+
       - name: Install dependencies
         run: flutter pub get
 
