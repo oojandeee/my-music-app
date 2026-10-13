@@ -703,7 +703,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                   },
                                 ),
                                 onTap: () {
-                                  Navigator.coreNavigator; // standard
                                   Navigator.pop(ctx);
                                   _playTrack(track);
                                 },
