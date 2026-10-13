@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
@@ -16,8 +14,6 @@ class TrackItem {
   final String artist;
   final String url;
   final String? artworkUrl;
-  final bool isLocal;
-  final bool isVideo;
 
   TrackItem({
     required this.id,
@@ -25,8 +21,6 @@ class TrackItem {
     required this.artist,
     required this.url,
     this.artworkUrl,
-    this.isLocal = false,
-    this.isVideo = false,
   });
 }
 
@@ -68,7 +62,6 @@ class MainTabScreen extends StatefulWidget {
 class _MainTabScreenState extends State<MainTabScreen> {
   int _currentIndex = 0;
   final AudioPlayer _audioPlayer = AudioPlayer();
-  VideoPlayerController? _videoController;
 
   final List<BoxModel> _boxes = [
     BoxModel(name: 'Discover Weekly'),
@@ -114,31 +107,17 @@ class _MainTabScreenState extends State<MainTabScreen> {
   @override
   void dispose() {
     _audioPlayer.dispose();
-    _videoController?.dispose();
     super.dispose();
   }
 
   Future<void> _playTrack(TrackItem track) async {
     await _audioPlayer.stop();
-    await _videoController?.dispose();
-    _videoController = null;
-
     setState(() {
       _currentPlayingTrack = track;
     });
 
     try {
-      if (track.isVideo && track.isLocal) {
-        _videoController = VideoPlayerController.file(File(track.url));
-        await _videoController!.initialize();
-        _videoController!.play();
-      }
-
-      if (track.isLocal) {
-        await _audioPlayer.setFilePath(track.url);
-      } else {
-        await _audioPlayer.setUrl(track.url);
-      }
+      await _audioPlayer.setUrl(track.url);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
@@ -163,47 +142,48 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return _likedSongs.any((item) => item.id == track.id);
   }
 
-  Future<void> _pickFileForBox(int boxIndex) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'mp4'],
-      allowMultiple: true,
+  void _addCustomUrlToBox(int boxIndex) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF242424),
+        title: Text('Add Stream to ${_boxes[boxIndex].name}'),
+        content: TextField(
+          controller: controller,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Paste direct audio/stream URL',
+            hintStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final url = controller.text.trim();
+              if (url.isNotEmpty) {
+                setState(() {
+                  _boxes[boxIndex].tracks.add(
+                        TrackItem(
+                          id: url,
+                          title: 'Custom Track ${_boxes[boxIndex].tracks.length + 1}',
+                          artist: 'Custom Stream',
+                          url: url,
+                        ),
+                      );
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
     );
-
-    if (result != null && result.files.isNotEmpty) {
-      bool unsupportedFound = false;
-
-      setState(() {
-        for (final file in result.files) {
-          if (file.path != null) {
-            final ext = file.extension?.toLowerCase() ?? '';
-            final valid = ['mp3', 'wav', 'm4a', 'aac', 'mp4'].contains(ext);
-
-            if (valid) {
-              final isVideo = ext == 'mp4';
-              _boxes[boxIndex].tracks.add(
-                    TrackItem(
-                      id: file.path!,
-                      title: file.name,
-                      artist: isVideo ? 'Local Video' : 'Local Audio',
-                      url: file.path!,
-                      isLocal: true,
-                      isVideo: isVideo,
-                    ),
-                  );
-            } else {
-              unsupportedFound = true;
-            }
-          }
-        }
-      });
-
-      if (unsupportedFound) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File not supported')),
-        );
-      }
-    }
   }
 
   void _renameBox(int index) {
@@ -311,16 +291,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
                         color: const Color(0xFF1E1E1E),
-                        child: track.isVideo && _videoController != null && _videoController!.value.isInitialized
-                            ? AspectRatio(
-                                aspectRatio: _videoController!.value.aspectRatio,
-                                child: VideoPlayer(_videoController!),
-                              )
-                            : track.artworkUrl != null
-                                ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
-                                : const Center(
-                                    child: Icon(Icons.music_note, size: 100, color: Colors.white24),
-                                  ),
+                        child: track.artworkUrl != null
+                            ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
+                            : const Center(
+                                child: Icon(Icons.music_note, size: 100, color: Colors.white24),
+                              ),
                       ),
                     ),
                   ),
@@ -398,10 +373,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         onPressed: () {
                           if (_isPlaying) {
                             _audioPlayer.pause();
-                            _videoController?.pause();
                           } else {
                             _audioPlayer.play();
-                            _videoController?.play();
                           }
                           setModalState(() {});
                         },
@@ -508,7 +481,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
             itemCount: _boxes.length,
             itemBuilder: (context, index) {
               final box = _boxes[index];
-              final isEmpty = box.tracks.isEmpty;
 
               return InkWell(
                 onTap: () {
@@ -537,12 +509,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ),
                         child: Center(
                           child: IconButton(
-                            icon: Icon(
-                              isEmpty ? Icons.add : Icons.music_note,
-                              color: Colors.white70,
-                              size: 20,
-                            ),
-                            onPressed: () => _pickFileForBox(index),
+                            icon: const Icon(Icons.add, color: Colors.white70, size: 20),
+                            onPressed: () => _addCustomUrlToBox(index),
                           ),
                         ),
                       ),
@@ -588,7 +556,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     icon: const Icon(Icons.add, color: Colors.greenAccent),
                     onPressed: () {
                       Navigator.pop(ctx);
-                      _pickFileForBox(boxIndex);
+                      _addCustomUrlToBox(boxIndex);
                     },
                   ),
                 ],
@@ -735,6 +703,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                   },
                                 ),
                                 onTap: () {
+                                  Navigator.coreNavigator; // standard
                                   Navigator.pop(ctx);
                                   _playTrack(track);
                                 },
@@ -805,7 +774,7 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
             controller: _searchController,
             style: const TextStyle(color: Colors.white),
             decoration: InputDecoration(
-              hintText: 'Search iTunes 30s Previews...',
+              hintText: 'Search iTunes Previews...',
               filled: true,
               fillColor: const Color(0xFF282828),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
