@@ -43,20 +43,23 @@ class CircleItem {
   CircleItem({required this.name, required this.imageUrl});
 }
 
-class CircleLineModel {
+// Unified Home Section item to maintain mixed order of box lines and circle lines
+enum HomeSectionType { circleLine, boxLine }
+
+class HomeSection {
+  String id;
+  HomeSectionType type;
   String name;
-  final List<CircleItem> circles;
+  List<BoxModel>? boxes;
+  List<CircleItem>? circles;
 
-  CircleLineModel({required this.name, List<CircleItem>? circles})
-      : circles = circles ?? [];
-}
-
-class BoxLineModel {
-  String name;
-  final List<BoxModel> boxes;
-
-  BoxLineModel({required this.name, List<BoxModel>? boxes})
-      : boxes = boxes ?? [];
+  HomeSection({
+    required this.id,
+    required this.type,
+    required this.name,
+    this.boxes,
+    this.circles,
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -91,36 +94,76 @@ class _MainTabScreenState extends State<MainTabScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  final List<CircleLineModel> _circleLines = [
-    CircleLineModel(
+  // Unified list of home sections allowing mixed order (Circle lines and Box lines)
+  final List<HomeSection> _homeSections = [
+    HomeSection(
+      id: 'circle_line_1',
+      type: HomeSectionType.circleLine,
       name: 'Favorite artists',
       circles: [
         CircleItem(name: 'Gill Madhipuriya', imageUrl: ''),
         CircleItem(name: 'Baaghi', imageUrl: ''),
       ],
     ),
-  ];
-
-  final List<BoxLineModel> _boxLines = [
-    BoxLineModel(
+    HomeSection(
+      id: 'box_line_1',
+      type: HomeSectionType.boxLine,
       name: 'Line 1',
       boxes: [
-        BoxModel(name: 'Discover Weekly', tracks: [
-          TrackItem(
-            id: 'astarr_1',
-            title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
-            artist: 'Prem Dhillon',
-            url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a',
-          ),
-        ]),
-        BoxModel(name: 'golden hour', tracks: []),
+        BoxModel(
+          name: 'Top 5 Songs',
+          tracks: [
+            TrackItem(
+              id: 'top_1',
+              title: '1. KAROL G, Judeline, rusowsky - BbY WOW',
+              artist: 'KAROL G, Judeline, rusowsky',
+              url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
+            ),
+            TrackItem(
+              id: 'top_2',
+              title: '2. Shakira, Burna Boy - Dai Dai',
+              artist: 'Shakira, Burna Boy',
+              url: 'https://archive.org/download/shakira-burna-boy-dai-dai-official-video-mp-3/Shakira%2C%20Burna%20Boy%20-%20Dai%20Dai%20%28Official%20Video%29_MP3.mp3',
+            ),
+            TrackItem(
+              id: 'top_3',
+              title: '3. Taylor Swift - Patient Zero',
+              artist: 'Taylor Swift',
+              url: 'https://archive.org/download/taylor-swift-patient-zero-official-music-video-mp-3/Taylor%20Swift%20-%20Patient%20Zero%20%28Official%20Music%20Video%29_MP3.mp3',
+            ),
+            TrackItem(
+              id: 'top_4',
+              title: '4. ADÉLA - Nicole Kidman',
+              artist: 'ADÉLA',
+              url: 'https://archive.org/download/ade-la-nicole-kidman-mp-3/AD%C3%89LA%20-%20Nicole%20Kidman_MP3.mp3',
+            ),
+            TrackItem(
+              id: 'top_5',
+              title: '5. Drake, Don Toliver - Solar Eclipse',
+              artist: 'Drake, Don Toliver',
+              url: 'https://archive.org/download/drake-don-toliver-solar-eclipse-mp-3/Drake%2C%20Don%20Toliver%20-%20Solar%20Eclipse_MP3.mp3',
+            ),
+          ],
+        ),
       ],
     ),
-    BoxLineModel(
+    HomeSection(
+      id: 'box_line_2',
+      type: HomeSectionType.boxLine,
       name: 'Line 2',
       boxes: [
-        BoxModel(name: 'big on the internet', tracks: []),
-        BoxModel(name: 'Classic Road Trip', tracks: []),
+        BoxModel(
+          name: 'ASTARR Hits',
+          tracks: [
+            TrackItem(
+              id: 'astarr_1',
+              title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
+              artist: 'Prem Dhillon',
+              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a',
+            ),
+          ],
+        ),
+        BoxModel(name: 'golden hour', tracks: []),
       ],
     ),
   ];
@@ -218,61 +261,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
   }
 
-  void _addCustomUrlToBox(BoxModel box) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF242424),
-        title: Text('Add Link to ${box.name}'),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'Paste direct song URL (http://...)',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              String input = controller.text.trim();
-              if (input.isEmpty || !input.startsWith('http')) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid or Unreachable URL')),
-                );
-                Navigator.pop(ctx);
-                return;
-              }
-
-              String decoded = Uri.decodeComponent(input.split('/').last);
-              decoded = decoded.replaceAll(RegExp(r'_MP3.*|_m4a.*|\.[^.]+$'), '').replaceAll('_', ' ');
-
-              setState(() {
-                box.tracks.add(
-                  TrackItem(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
-                    title: decoded.isEmpty ? 'Custom Song' : decoded,
-                    artist: 'Web Stream',
-                    url: input,
-                  ),
-                );
-              });
-              Navigator.pop(ctx);
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _addNewBoxDialog() {
-    if (_boxLines.isEmpty) return;
+    final boxLines = _homeSections.where((s) => s.type == HomeSectionType.boxLine).toList();
+    if (boxLines.isEmpty) return;
     int selectedLineIndex = 0;
     final controller = TextEditingController();
 
@@ -301,8 +292,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     DropdownButton<int>(
                       value: selectedLineIndex,
                       dropdownColor: const Color(0xFF242424),
-                      items: List.generate(_boxLines.length, (i) {
-                        return DropdownMenuItem(value: i, child: Text(_boxLines[i].name));
+                      items: List.generate(boxLines.length, (i) {
+                        return DropdownMenuItem(value: i, child: Text(boxLines[i].name));
                       }),
                       onChanged: (val) {
                         if (val != null) setDlgState(() => selectedLineIndex = val);
@@ -318,7 +309,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 onPressed: () {
                   final name = controller.text.trim().isEmpty ? 'New Box' : controller.text.trim();
                   setState(() {
-                    _boxLines[selectedLineIndex].boxes.add(BoxModel(name: name));
+                    boxLines[selectedLineIndex].boxes?.add(BoxModel(name: name));
                   });
                   Navigator.pop(ctx);
                 },
@@ -333,18 +324,29 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   void _addNewBoxLine() {
     setState(() {
-      _boxLines.add(BoxLineModel(name: 'Line ${_boxLines.length + 1}'));
+      _homeSections.add(HomeSection(
+        id: 'box_line_${DateTime.now().millisecondsSinceEpoch}',
+        type: HomeSectionType.boxLine,
+        name: 'Line ${_homeSections.where((s) => s.type == HomeSectionType.boxLine).length + 1}',
+        boxes: [],
+      ));
     });
   }
 
   void _addNewCircularLine() {
     setState(() {
-      _circleLines.add(CircleLineModel(name: 'Favorite artists ${_circleLines.length + 1}'));
+      _homeSections.add(HomeSection(
+        id: 'circle_line_${DateTime.now().millisecondsSinceEpoch}',
+        type: HomeSectionType.circleLine,
+        name: 'Favorite artists ${_homeSections.where((s) => s.type == HomeSectionType.circleLine).length + 1}',
+        circles: [],
+      ));
     });
   }
 
   void _addCircleToLineDialog() {
-    if (_circleLines.isEmpty) return;
+    final circleLines = _homeSections.where((s) => s.type == HomeSectionType.circleLine).toList();
+    if (circleLines.isEmpty) return;
     int selectedLineIndex = 0;
     final controller = TextEditingController();
 
@@ -373,8 +375,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     DropdownButton<int>(
                       value: selectedLineIndex,
                       dropdownColor: const Color(0xFF242424),
-                      items: List.generate(_circleLines.length, (i) {
-                        return DropdownMenuItem(value: i, child: Text(_circleLines[i].name));
+                      items: List.generate(circleLines.length, (i) {
+                        return DropdownMenuItem(value: i, child: Text(circleLines[i].name));
                       }),
                       onChanged: (val) {
                         if (val != null) setDlgState(() => selectedLineIndex = val);
@@ -390,7 +392,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 onPressed: () {
                   final name = controller.text.trim().isEmpty ? 'Artist' : controller.text.trim();
                   setState(() {
-                    _circleLines[selectedLineIndex].circles.add(CircleItem(name: name, imageUrl: ''));
+                    circleLines[selectedLineIndex].circles?.add(CircleItem(name: name, imageUrl: ''));
                   });
                   Navigator.pop(ctx);
                 },
@@ -403,13 +405,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  void _confirmDeleteBox(BoxLineModel lineModel, int boxIndex) {
+  void _confirmDeleteBox(HomeSection section, int boxIndex) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF242424),
         title: const Text('Remove Box'),
-        content: Text('Are you sure to remove "${lineModel.boxes[boxIndex].name}"?'),
+        content: Text('Are you sure to remove "${section.boxes?[boxIndex].name}"?'),
         actions: [
           TextButton(
             onPressed: () {
@@ -422,7 +424,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.white24),
             onPressed: () {
               setState(() {
-                lineModel.boxes.removeAt(boxIndex);
+                section.boxes?.removeAt(boxIndex);
                 _isRemoveMode = false;
               });
               Navigator.pop(ctx);
@@ -434,13 +436,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  void _confirmDeleteCircle(CircleLineModel circleLine, int circleIndex) {
+  void _confirmDeleteCircle(HomeSection section, int circleIndex) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF242424),
         title: const Text('Remove Circle'),
-        content: Text('Are you sure to remove "${circleLine.circles[circleIndex].name}"?'),
+        content: Text('Are you sure to remove "${section.circles?[circleIndex].name}"?'),
         actions: [
           TextButton(
             onPressed: () {
@@ -453,7 +455,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.white24),
             onPressed: () {
               setState(() {
-                circleLine.circles.removeAt(circleIndex);
+                section.circles?.removeAt(circleIndex);
                 _isCircleRemoveMode = false;
               });
               Navigator.pop(ctx);
@@ -528,7 +530,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       builder: (c) => AlertDialog(
                         backgroundColor: const Color(0xFF242424),
                         title: const Text('Album Info'),
-                        content: Text('Track: ${track.title}\nArtist: ${track.artist}\nRelease: 2024'),
+                        content: Text('Track: ${track.title}\nArtist: ${track.artist}\nRelease: 2026'),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
                         ],
@@ -577,9 +579,27 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
                         color: const Color(0xFF282828),
-                        child: track.artworkUrl != null
-                            ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
-                            : const Center(child: Icon(Icons.music_note, size: 100, color: Colors.white24)),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            track.artworkUrl != null
+                                ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
+                                : const Center(child: Icon(Icons.music_note, size: 100, color: Colors.white24)),
+                            // Playing Animation Overlay
+                            if (_isPlaying)
+                              Positioned(
+                                bottom: 20,
+                                child: Row(
+                                  children: List.generate(4, (i) => Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                                    width: 4,
+                                    height: 20 + (i * 8).toDouble(),
+                                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2)),
+                                  )),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -717,14 +737,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.campaign_outlined),
-            title: const Text('Your Updates'),
-            onTap: () => Navigator.pop(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('Settings and privacy'),
-            onTap: () => Navigator.pop(context),
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About Template'),
+            onTap: () {
+              Navigator.pop(context);
+              showDialog(
+                context: context,
+                builder: (c) => AlertDialog(
+                  backgroundColor: const Color(0xFF242424),
+                  title: const Text('White-Label Music App'),
+                  content: const Text('Commercial Flutter music player boilerplate ready for rebranding and publishing.'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -844,17 +870,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ),
             ),
           
-          ..._circleLines.map((circleLine) => _buildCircleLineSection(circleLine)),
-          const SizedBox(height: 8),
-          ..._boxLines.asMap().entries.map((entry) => _buildBoxLineSection(entry.value, entry.key + 1)),
+          // Render Home Sections in user-added order
+          ..._homeSections.map((section) {
+            if (section.type == HomeSectionType.circleLine) {
+              return _buildCircleLineSection(section);
+            } else {
+              return _buildBoxLineSection(section);
+            }
+          }),
         ],
       ),
     );
   }
 
-  Widget _buildCircleLineSection(CircleLineModel circleLine) {
-    if (circleLine.circles.isEmpty) return const SizedBox.shrink();
-
+  Widget _buildCircleLineSection(HomeSection section) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -862,11 +891,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              Text(circleLine.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               IconButton(
                 icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
                 onPressed: () {
-                  final controller = TextEditingController(text: circleLine.name);
+                  final controller = TextEditingController(text: section.name);
                   showDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
@@ -878,7 +907,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ElevatedButton(
                           onPressed: () {
                             if (controller.text.trim().isNotEmpty) {
-                              setState(() => circleLine.name = controller.text.trim());
+                              setState(() => section.name = controller.text.trim());
                             }
                             Navigator.pop(ctx);
                           },
@@ -893,7 +922,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               IconButton(
                 icon: const Icon(Icons.close, size: 18, color: Colors.white38),
                 onPressed: () {
-                  setState(() => _circleLines.remove(circleLine));
+                  setState(() => _homeSections.remove(section));
                 },
               ),
             ],
@@ -901,48 +930,53 @@ class _MainTabScreenState extends State<MainTabScreen> {
         ),
         SizedBox(
           height: 110,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: circleLine.circles.length,
-            itemBuilder: (context, index) {
-              final circle = circleLine.circles[index];
-              return Container(
-                width: 80,
-                margin: const EdgeInsets.only(right: 12),
-                child: InkWell(
-                  onTap: () {
-                    if (_isCircleRemoveMode) {
-                      _confirmDeleteCircle(circleLine, index);
-                    }
+          child: (section.circles == null || section.circles!.isEmpty)
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text('No artists in this line. Use menu to add.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: section.circles!.length,
+                  itemBuilder: (context, index) {
+                    final circle = section.circles![index];
+                    return Container(
+                      width: 80,
+                      margin: const EdgeInsets.only(right: 12),
+                      child: InkWell(
+                        onTap: () {
+                          if (_isCircleRemoveMode) {
+                            _confirmDeleteCircle(section, index);
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            const CircleAvatar(
+                              radius: 35,
+                              backgroundColor: Colors.white24,
+                              child: Icon(Icons.person, size: 35, color: Colors.white),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              circle.name,
+                              style: const TextStyle(fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
                   },
-                  child: Column(
-                    children: [
-                      const CircleAvatar(
-                        radius: 35,
-                        backgroundColor: Colors.white24,
-                        child: Icon(Icons.person, size: 35, color: Colors.white),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        circle.name,
-                        style: const TextStyle(fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
   }
 
-  Widget _buildBoxLineSection(BoxLineModel boxLine, int lineNum) {
+  Widget _buildBoxLineSection(HomeSection section) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -950,23 +984,23 @@ class _MainTabScreenState extends State<MainTabScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              Text(boxLine.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               IconButton(
                 icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
                 onPressed: () {
-                  final controller = TextEditingController(text: boxLine.name);
+                  final controller = TextEditingController(text: section.name);
                   showDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       backgroundColor: const Color(0xFF242424),
-                      title: Text('Rename Line $lineNum'),
+                      title: Text('Rename ${section.name}'),
                       content: TextField(controller: controller, style: const TextStyle(color: Colors.white)),
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                         ElevatedButton(
                           onPressed: () {
                             if (controller.text.trim().isNotEmpty) {
-                              setState(() => boxLine.name = controller.text.trim());
+                              setState(() => section.name = controller.text.trim());
                             }
                             Navigator.pop(ctx);
                           },
@@ -977,47 +1011,59 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   );
                 },
               ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.close, size: 18, color: Colors.white38),
+                onPressed: () {
+                  setState(() => _homeSections.remove(section));
+                },
+              ),
             ],
           ),
         ),
         SizedBox(
           height: 120,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: boxLine.boxes.length,
-            itemBuilder: (context, index) {
-              final box = boxLine.boxes[index];
-              return Container(
-                width: 110,
-                margin: const EdgeInsets.only(right: 12),
-                child: InkWell(
-                  onTap: () {
-                    if (_isRemoveMode) {
-                      _confirmDeleteBox(boxLine, index);
-                    } else {
-                      _openSpotifyStylePlaylist(box);
-                    }
+          child: (section.boxes == null || section.boxes!.isEmpty)
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text('No boxes in this line. Use menu to add.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: section.boxes!.length,
+                  itemBuilder: (context, index) {
+                    final box = section.boxes![index];
+                    return Container(
+                      width: 110,
+                      margin: const EdgeInsets.only(right: 12),
+                      child: InkWell(
+                        onTap: () {
+                          if (_isRemoveMode) {
+                            _confirmDeleteBox(section, index);
+                          } else {
+                            _openSpotifyStylePlaylist(box);
+                          }
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF282828),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.all(10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Icon(Icons.music_note, color: Colors.white, size: 24),
+                              Text(box.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12), maxLines: 2),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
                   },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF282828),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Icon(Icons.music_note, color: Colors.white, size: 24),
-                        Text(box.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12), maxLines: 2),
-                      ],
-                    ),
-                  ),
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
@@ -1051,13 +1097,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline, size: 28, color: Colors.white70),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _addCustomUrlToBox(box);
-                        },
-                      ),
                       const Spacer(),
                       FloatingActionButton(
                         backgroundColor: Colors.white,
@@ -1133,7 +1172,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       isLiked: _isLiked,
       onAddToPlaylist: (track) {
         setState(() => _playlist.add(track));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added "${track.title}" to PLAYLIST')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added "${track.title}" to YOUR LIBRARY')));
       },
       onOpenMenu: _openTrack3DotsMenu,
     );
