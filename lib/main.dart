@@ -494,7 +494,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   },
                 ),
                 ListTile(
-                  leading: Icon(_isLiked(track) ? Icons.favorite : Icons.favorite_border, color: _isLiked(track) ? Colors.white : Colors.white),
+                  leading: Icon(_isLiked(track) ? Icons.favorite : Icons.favorite_border, color: Colors.white),
                   title: Text(_isLiked(track) ? 'Remove from Liked Songs' : 'Add to Liked Songs'),
                   onTap: () {
                     _toggleLike(track);
@@ -527,7 +527,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       context: context,
                       builder: (c) => AlertDialog(
                         backgroundColor: const Color(0xFF242424),
-                        title: Text('Album Info'),
+                        title: const Text('Album Info'),
                         content: Text('Track: ${track.title}\nArtist: ${track.artist}\nRelease: 2024'),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
@@ -844,12 +844,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ),
             ),
           
-          // Render Circular Lines (Favorite Artists)
           ..._circleLines.map((circleLine) => _buildCircleLineSection(circleLine)),
-
           const SizedBox(height: 8),
-
-          // Render Box Lines
           ..._boxLines.asMap().entries.map((entry) => _buildBoxLineSection(entry.value, entry.key + 1)),
         ],
       ),
@@ -922,10 +918,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   },
                   child: Column(
                     children: [
-                      CircleAvatar(
+                      const CircleAvatar(
                         radius: 35,
                         backgroundColor: Colors.white24,
-                        child: const Icon(Icons.person, size: 35, color: Colors.white),
+                        child: Icon(Icons.person, size: 35, color: Colors.white),
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -1143,7 +1139,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= YOUR LIBRARY (PLAYLIST) TAB =================
+  // ================= YOUR LIBRARY TAB =================
   Widget _buildPlaylistScreen() {
     return DefaultTabController(
       length: 2,
@@ -1165,7 +1161,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
         ),
         body: TabBarView(
           children: [
-            // Tab 1: Playlists & Liked
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -1208,7 +1203,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 ],
               ),
             ),
-            // Tab 2: Downloads
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
