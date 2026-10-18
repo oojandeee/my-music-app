@@ -155,9 +155,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
           tracks: [
             TrackItem(
               id: 'astarr_1',
-              title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
+              title: 'KAROL G, Judeline, rusowsky - BbY WOW',
               artist: 'Prem Dhillon',
-              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a',
+              url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
             ),
           ],
         ),
@@ -218,14 +218,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Safely encode URL for ExoPlayer playback
-      final cleanUrl = Uri.encodeFull(track.url);
-      await _audioPlayer.setUrl(cleanUrl);
+      final String safeUrl = Uri.encodeFull(track.url.trim());
+      await _audioPlayer.setUrl(safeUrl);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error playing track: $e')),
+        SnackBar(content: Text('Error playing track: File link is inactive or 404 ($e)')),
       );
     }
   }
@@ -1335,7 +1334,7 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
     setState(() => _isLoading = true);
 
     try {
-      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&limit=25');
+      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song&limit=25');
       
       final response = await http.get(uri);
 
