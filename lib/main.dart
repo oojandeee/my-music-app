@@ -43,7 +43,6 @@ class CircleItem {
   CircleItem({required this.name, required this.imageUrl});
 }
 
-// Unified Home Section item to maintain mixed order of box lines and circle lines
 enum HomeSectionType { circleLine, boxLine }
 
 class HomeSection {
@@ -94,7 +93,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  // Unified list of home sections allowing mixed order (Circle lines and Box lines)
   final List<HomeSection> _homeSections = [
     HomeSection(
       id: 'circle_line_1',
@@ -220,7 +218,17 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      await _audioPlayer.setUrl(Uri.encodeFull(Uri.decodeFull(track.url)));
+      // Pass Browser Headers to avoid Archive.org source rejection
+      final Uri uri = Uri.parse(Uri.encodeFull(Uri.decodeFull(track.url)));
+      final AudioSource audioSource = AudioSource.uri(
+        uri,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
+          'Accept': '*/*',
+        },
+      );
+
+      await _audioPlayer.setAudioSource(audioSource);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
@@ -585,7 +593,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             track.artworkUrl != null
                                 ? Image.network(track.artworkUrl!, fit: BoxFit.cover, width: double.infinity)
                                 : const Center(child: Icon(Icons.music_note, size: 100, color: Colors.white24)),
-                            // Playing Animation Overlay
                             if (_isPlaying)
                               Positioned(
                                 bottom: 20,
@@ -712,7 +719,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= LEFT DRAWER =================
   Widget _buildLeftDrawer() {
     return Drawer(
       backgroundColor: const Color(0xFF181818),
@@ -783,7 +789,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= HOME TAB =================
   Widget _buildHomeScreen() {
     return SingleChildScrollView(
       child: Column(
@@ -837,10 +842,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
-                    'Tap a box to remove',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Tap a box to remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 12),
                   InkWell(
                     onTap: () => setState(() => _isRemoveMode = false),
@@ -857,10 +859,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
-                    'Tap a circle to remove',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Tap a circle to remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 12),
                   InkWell(
                     onTap: () => setState(() => _isCircleRemoveMode = false),
@@ -869,8 +868,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 ],
               ),
             ),
-          
-          // Render Home Sections in user-added order
           ..._homeSections.map((section) {
             if (section.type == HomeSectionType.circleLine) {
               return _buildCircleLineSection(section);
@@ -921,9 +918,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.close, size: 18, color: Colors.white38),
-                onPressed: () {
-                  setState(() => _homeSections.remove(section));
-                },
+                onPressed: () => setState(() => _homeSections.remove(section)),
               ),
             ],
           ),
@@ -946,9 +941,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       margin: const EdgeInsets.only(right: 12),
                       child: InkWell(
                         onTap: () {
-                          if (_isCircleRemoveMode) {
-                            _confirmDeleteCircle(section, index);
-                          }
+                          if (_isCircleRemoveMode) _confirmDeleteCircle(section, index);
                         },
                         child: Column(
                           children: [
@@ -1014,9 +1007,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.close, size: 18, color: Colors.white38),
-                onPressed: () {
-                  setState(() => _homeSections.remove(section));
-                },
+                onPressed: () => setState(() => _homeSections.remove(section)),
               ),
             ],
           ),
@@ -1164,7 +1155,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= SEARCH TAB =================
   Widget _buildSearchScreen() {
     return ITunesSearchWidget(
       onPlayTrack: _playTrack,
@@ -1178,7 +1168,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ================= YOUR LIBRARY TAB =================
   Widget _buildPlaylistScreen() {
     return DefaultTabController(
       length: 2,
@@ -1354,8 +1343,14 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
     setState(() => _isLoading = true);
 
     try {
+      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song&limit=25');
+      
       final response = await http.get(
-        Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=25'),
+        uri,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+        },
       );
 
       if (response.statusCode == 200) {
