@@ -206,7 +206,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Future<void> _playTrack(TrackItem track) async {
     if (track.url.trim().isEmpty || !track.url.startsWith('http')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error playing track: (0) Source error')),
+        const SnackBar(content: Text('Error playing track: Invalid URL')),
       );
       return;
     }
@@ -218,17 +218,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Pass Browser Headers to avoid Archive.org source rejection
-      final Uri uri = Uri.parse(Uri.encodeFull(Uri.decodeFull(track.url)));
-      final AudioSource audioSource = AudioSource.uri(
-        uri,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36',
-          'Accept': '*/*',
-        },
-      );
-
-      await _audioPlayer.setAudioSource(audioSource);
+      // Direct clean setUrl without internal proxy server instantiation
+      await _audioPlayer.setUrl(track.url);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
@@ -1343,15 +1334,9 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
     setState(() => _isLoading = true);
 
     try {
-      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song&limit=25');
+      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&limit=25');
       
-      final response = await http.get(
-        uri,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-        },
-      );
+      final response = await http.get(uri);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
