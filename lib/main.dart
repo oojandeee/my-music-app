@@ -113,31 +113,31 @@ class _MainTabScreenState extends State<MainTabScreen> {
           tracks: [
             TrackItem(
               id: 'top_1',
-              title: '1. KAROL G, Judeline, rusowsky - BbY WOW',
+              title: 'KAROL G, Judeline, rusowsky - BbY WOW',
               artist: 'KAROL G, Judeline, rusowsky',
               url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
             ),
             TrackItem(
               id: 'top_2',
-              title: '2. Shakira, Burna Boy - Dai Dai',
+              title: 'Shakira, Burna Boy - Dai Dai',
               artist: 'Shakira, Burna Boy',
               url: 'https://archive.org/download/shakira-burna-boy-dai-dai-official-video-mp-3/Shakira%2C%20Burna%20Boy%20-%20Dai%20Dai%20%28Official%20Video%29_MP3.mp3',
             ),
             TrackItem(
               id: 'top_3',
-              title: '3. Taylor Swift - Patient Zero',
+              title: 'Taylor Swift - Patient Zero',
               artist: 'Taylor Swift',
               url: 'https://archive.org/download/taylor-swift-patient-zero-official-music-video-mp-3/Taylor%20Swift%20-%20Patient%20Zero%20%28Official%20Music%20Video%29_MP3.mp3',
             ),
             TrackItem(
               id: 'top_4',
-              title: '4. ADÉLA - Nicole Kidman',
+              title: 'ADÉLA - Nicole Kidman',
               artist: 'ADÉLA',
               url: 'https://archive.org/download/ade-la-nicole-kidman-mp-3/AD%C3%89LA%20-%20Nicole%20Kidman_MP3.mp3',
             ),
             TrackItem(
               id: 'top_5',
-              title: '5. Drake, Don Toliver - Solar Eclipse',
+              title: 'Drake, Don Toliver - Solar Eclipse',
               artist: 'Drake, Don Toliver',
               url: 'https://archive.org/download/drake-don-toliver-solar-eclipse-mp-3/Drake%2C%20Don%20Toliver%20-%20Solar%20Eclipse_MP3.mp3',
             ),
@@ -218,8 +218,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Direct clean setUrl without internal proxy server instantiation
-      await _audioPlayer.setUrl(track.url);
+      // Safely encode URL for ExoPlayer playback
+      final cleanUrl = Uri.encodeFull(track.url);
+      await _audioPlayer.setUrl(cleanUrl);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
@@ -1377,46 +1378,48 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
           const SizedBox(height: 16),
           if (_isLoading) const CircularProgressIndicator(color: Colors.white),
           Expanded(
-            child: ListView.builder(
-              itemCount: _searchResults.length,
-              itemBuilder: (context, index) {
-                final item = _searchResults[index];
-                final track = TrackItem(
-                  id: item['trackId']?.toString() ?? index.toString(),
-                  title: item['trackName'] ?? 'Unknown Track',
-                  artist: item['artistName'] ?? 'Unknown Artist',
-                  url: item['previewUrl'] ?? '',
-                  artworkUrl: item['artworkUrl100'],
-                );
+            child: _searchResults.isEmpty
+                ? const Center(child: Text('No results found.', style: TextStyle(color: Colors.white38)))
+                : ListView.builder(
+                    itemCount: _searchResults.length,
+                    itemBuilder: (context, index) {
+                      final item = _searchResults[index];
+                      final track = TrackItem(
+                        id: item['trackId']?.toString() ?? index.toString(),
+                        title: item['trackName'] ?? 'Unknown Track',
+                        artist: item['artistName'] ?? 'Unknown Artist',
+                        url: item['previewUrl'] ?? '',
+                        artworkUrl: item['artworkUrl100'],
+                      );
 
-                final liked = widget.isLiked(track);
+                      final liked = widget.isLiked(track);
 
-                return ListTile(
-                  leading: item['artworkUrl100'] != null
-                      ? Image.network(item['artworkUrl100'], width: 48, height: 48, fit: BoxFit.cover)
-                      : const Icon(Icons.music_note),
-                  title: Text(track.title),
-                  subtitle: Text(track.artist),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(liked ? Icons.favorite : Icons.favorite_border, color: liked ? Colors.white : Colors.white38),
-                        onPressed: () {
-                          widget.onToggleLike(track);
-                          setState(() {});
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.more_vert, color: Colors.white38),
-                        onPressed: () => widget.onOpenMenu(track),
-                      ),
-                    ],
+                      return ListTile(
+                        leading: item['artworkUrl100'] != null
+                            ? Image.network(item['artworkUrl100'], width: 48, height: 48, fit: BoxFit.cover)
+                            : const Icon(Icons.music_note),
+                        title: Text(track.title),
+                        subtitle: Text(track.artist),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(liked ? Icons.favorite : Icons.favorite_border, color: liked ? Colors.white : Colors.white38),
+                              onPressed: () {
+                                widget.onToggleLike(track);
+                                setState(() {});
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.more_vert, color: Colors.white38),
+                              onPressed: () => widget.onOpenMenu(track),
+                            ),
+                          ],
+                        ),
+                        onTap: () => widget.onPlayTrack(track),
+                      );
+                    },
                   ),
-                  onTap: () => widget.onPlayTrack(track),
-                );
-              },
-            ),
           ),
         ],
       ),
