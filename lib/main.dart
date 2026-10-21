@@ -155,9 +155,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
           tracks: [
             TrackItem(
               id: 'astarr_1',
-              title: 'KAROL G, Judeline, rusowsky - BbY WOW',
+              title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
               artist: 'Prem Dhillon',
-              url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
+              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a',
             ),
           ],
         ),
@@ -218,13 +218,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      final String safeUrl = Uri.encodeFull(track.url.trim());
-      await _audioPlayer.setUrl(safeUrl);
+      // Safely decode any existing encoding before passing to just_audio
+      final String decodedUrl = Uri.decodeFull(track.url.trim());
+      await _audioPlayer.setUrl(decodedUrl);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error playing track: File link is inactive or 404 ($e)')),
+        SnackBar(content: Text('Error playing track: $e')),
       );
     }
   }
@@ -1328,29 +1329,51 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _searchResults = [];
   bool _isLoading = false;
+  String? _errorMessage;
 
   Future<void> _searchITunes(String query) async {
-    if (query.trim().isEmpty) return;
-    setState(() => _isLoading = true);
+    final String trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     try {
-      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query.trim())}&media=music&entity=song&limit=25');
-      
+      final String encodedTerm = Uri.encodeComponent(trimmedQuery);
+      final Uri uri = Uri.parse('https://itunes.apple.com/search?term=$encodedTerm&media=music&limit=25');
+
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        final List<dynamic> results = data['results'] ?? [];
+        
         if (mounted) {
           setState(() {
-            _searchResults = data['results'] ?? [];
+            _searchResults = results;
             _isLoading = false;
           });
         }
-        return;
+      } else {
+        if (mounted) {
+          setState(() {
+            _searchResults = [];
+            _isLoading = false;
+            _errorMessage = 'API HTTP ${response.statusCode}';
+          });
+        }
       }
-    } catch (_) {}
-
-    if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+          _isLoading = false;
+          _errorMessage = e.toString();
+        });
+      }
+    }
   }
 
   @override
@@ -1376,8 +1399,16 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
           ),
           const SizedBox(height: 16),
           if (_isLoading) const CircularProgressIndicator(color: Colors.white),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text(
+                'Search Error: $_errorMessage',
+                style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+              ),
+            ),
           Expanded(
-            child: _searchResults.isEmpty
+            child: _searchResults.isEmpty && !_isLoading
                 ? const Center(child: Text('No results found.', style: TextStyle(color: Colors.white38)))
                 : ListView.builder(
                     itemCount: _searchResults.length,
