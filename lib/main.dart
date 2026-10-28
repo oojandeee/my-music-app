@@ -157,7 +157,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               id: 'astarr_1',
               title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
               artist: 'Prem Dhillon',
-              // Clean direct URL without trailing broken browser artifacts
+              // CLEAN DIRECT DIRECTORY LINK
               url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3',
             ),
           ],
@@ -219,15 +219,19 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Clean and encode URL properly
-      final String cleanUrl = Uri.encodeFull(track.url.trim());
-      await _audioPlayer.setUrl(cleanUrl);
+      // Strip away any trailing browser copy-paste duplicate suffixes like (1) or .m4a appended at the end
+      String cleanUrl = track.url.trim();
+      if (cleanUrl.contains('.mp3')) {
+        cleanUrl = cleanUrl.substring(0, cleanUrl.indexOf('.mp3') + 4);
+      }
+
+      final String encodedUrl = Uri.encodeFull(cleanUrl);
+      await _audioPlayer.setUrl(encodedUrl);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
-      // Show the REAL detailed error message instead of hiding it
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playback Error: $e'), duration: const Duration(seconds: 5)),
+        SnackBar(content: Text('Playback Error: $e'), duration: const Duration(seconds: 4)),
       );
     }
   }
