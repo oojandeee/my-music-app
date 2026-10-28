@@ -157,7 +157,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
               id: 'astarr_1',
               title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
               artist: 'Prem Dhillon',
-              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3%20%281%29%20%281%29.m4a',
+              // Clean direct URL without trailing broken browser artifacts
+              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3',
             ),
           ],
         ),
@@ -218,14 +219,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Safely decode any existing encoding before passing to just_audio
-      final String decodedUrl = Uri.decodeFull(track.url.trim());
-      await _audioPlayer.setUrl(decodedUrl);
+      // Clean and encode URL properly
+      final String cleanUrl = Uri.encodeFull(track.url.trim());
+      await _audioPlayer.setUrl(cleanUrl);
       _audioPlayer.play();
       _openFullPlayerModal(track);
     } catch (e) {
+      // Show the REAL detailed error message instead of hiding it
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error playing track: $e')),
+        SnackBar(content: Text('Playback Error: $e'), duration: const Duration(seconds: 5)),
       );
     }
   }
