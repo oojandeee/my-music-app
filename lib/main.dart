@@ -117,30 +117,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
               artist: 'KAROL G, Judeline, rusowsky',
               url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
             ),
-            TrackItem(
-              id: 'top_2',
-              title: 'Shakira, Burna Boy - Dai Dai',
-              artist: 'Shakira, Burna Boy',
-              url: 'https://archive.org/download/shakira-burna-boy-dai-dai-official-video-mp-3/Shakira%2C%20Burna%20Boy%20-%20Dai%20Dai%20%28Official%20Video%29_MP3.mp3',
-            ),
-            TrackItem(
-              id: 'top_3',
-              title: 'Taylor Swift - Patient Zero',
-              artist: 'Taylor Swift',
-              url: 'https://archive.org/download/taylor-swift-patient-zero-official-music-video-mp-3/Taylor%20Swift%20-%20Patient%20Zero%20%28Official%20Music%20Video%29_MP3.mp3',
-            ),
-            TrackItem(
-              id: 'top_4',
-              title: 'ADÉLA - Nicole Kidman',
-              artist: 'ADÉLA',
-              url: 'https://archive.org/download/ade-la-nicole-kidman-mp-3/AD%C3%89LA%20-%20Nicole%20Kidman_MP3.mp3',
-            ),
-            TrackItem(
-              id: 'top_5',
-              title: 'Drake, Don Toliver - Solar Eclipse',
-              artist: 'Drake, Don Toliver',
-              url: 'https://archive.org/download/drake-don-toliver-solar-eclipse-mp-3/Drake%2C%20Don%20Toliver%20-%20Solar%20Eclipse_MP3.mp3',
-            ),
           ],
         ),
       ],
@@ -157,8 +133,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               id: 'astarr_1',
               title: 'ASTARR (OFFICIAL VIDEO) PREM DHILLON',
               artist: 'Prem Dhillon',
-              // CLEAN DIRECT DIRECTORY LINK
-              url: 'https://archive.org/download/astarr-official-video-prem-dhillon-cheetah-4-da-gang-latest-punjabi-songs-2024-mp-3.mp-3-1-1/ASTARR%20%28OFFICIAL%20VIDEO%29%20PREM%20DHILLON%20%20CHEETAH%20%204%20Da%20Gang%20%20LATEST%20PUNJABI%20SONGS%202024_MP3.mp3',
+              url: 'https://archive.org/download/karol-g-judeline-rusowsky-bb-y-wow-visualizer-mp-3_202610/KAROL%20G%2C%20Judeline%2C%20rusowsky%20-%20BbY%20WOW%20%28Visualizer%29_MP3.mp3',
             ),
           ],
         ),
@@ -180,6 +155,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
+  @defaultInit
   @override
   void initState() {
     super.initState();
@@ -219,19 +195,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _recents.insert(0, track);
       });
 
-      // Strip away any trailing browser copy-paste duplicate suffixes like (1) or .m4a appended at the end
-      String cleanUrl = track.url.trim();
-      if (cleanUrl.contains('.mp3')) {
-        cleanUrl = cleanUrl.substring(0, cleanUrl.indexOf('.mp3') + 4);
-      }
-
-      final String encodedUrl = Uri.encodeFull(cleanUrl);
-      await _audioPlayer.setUrl(encodedUrl);
+      await _audioPlayer.setUrl(track.url.trim());
       _audioPlayer.play();
       _openFullPlayerModal(track);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Capture exact underlying PlayerException / PlatformException details
+      String detailedError = e.toString();
+      if (e is PlayerException) {
+        detailedError = 'PlayerException [${e.code}]: ${e.message}';
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Playback Error: $e'), duration: const Duration(seconds: 4)),
+        SnackBar(
+          content: Text('Detailed Playback Error: $detailedError'),
+          duration: const Duration(seconds: 7),
+        ),
       );
     }
   }
@@ -259,10 +237,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Downloaded "${track.title}" successfully')),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Song is already downloaded')),
       );
     }
   }
@@ -526,24 +500,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added to Playlist')));
                   },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.album),
-                  title: const Text('Go to album'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    showDialog(
-                      context: context,
-                      builder: (c) => AlertDialog(
-                        backgroundColor: const Color(0xFF242424),
-                        title: const Text('Album Info'),
-                        content: Text('Track: ${track.title}\nArtist: ${track.artist}\nRelease: 2026'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
-                        ],
-                      ),
-                    );
-                  },
-                ),
               ],
             ),
           ),
@@ -740,22 +696,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
               _openRecentsScreen();
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('About Template'),
-            onTap: () {
-              Navigator.pop(context);
-              showDialog(
-                context: context,
-                builder: (c) => AlertDialog(
-                  backgroundColor: const Color(0xFF242424),
-                  title: const Text('White-Label Music App'),
-                  content: const Text('Commercial Flutter music player boilerplate ready for rebranding and publishing.'),
-                  actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
-                ),
-              );
-            },
-          ),
         ],
       ),
     );
@@ -773,11 +713,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   itemCount: _recents.length,
                   itemBuilder: (context, index) {
                     final track = _recents[index];
-                    final dateStr = '${track.playedAt.year}-${track.playedAt.month.toString().padLeft(2, '0')}-${track.playedAt.day.toString().padLeft(2, '0')}';
                     return ListTile(
                       leading: const Icon(Icons.music_note, color: Colors.white),
                       title: Text(track.title),
-                      subtitle: Text('$dateStr • ${track.artist}'),
+                      subtitle: Text(track.artist),
                       onTap: () => _playTrack(track),
                     );
                   },
@@ -832,40 +771,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ],
             ),
           ),
-          if (_isRemoveMode)
-            Container(
-              color: Colors.white12,
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Tap a box to remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap: () => setState(() => _isRemoveMode = false),
-                    child: const Icon(Icons.close, size: 20, color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          if (_isCircleRemoveMode)
-            Container(
-              color: Colors.white12,
-              width: double.infinity,
-              padding: const EdgeInsets.all(8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Tap a circle to remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 12),
-                  InkWell(
-                    onTap: () => setState(() => _isCircleRemoveMode = false),
-                    child: const Icon(Icons.close, size: 20, color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
           ..._homeSections.map((section) {
             if (section.type == HomeSectionType.circleLine) {
               return _buildCircleLineSection(section);
@@ -884,49 +789,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
-                onPressed: () {
-                  final controller = TextEditingController(text: section.name);
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: const Color(0xFF242424),
-                      title: const Text('Rename Circle Line'),
-                      content: TextField(controller: controller, style: const TextStyle(color: Colors.white)),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (controller.text.trim().isNotEmpty) {
-                              setState(() => section.name = controller.text.trim());
-                            }
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('Save'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: Colors.white38),
-                onPressed: () => setState(() => _homeSections.remove(section)),
-              ),
-            ],
-          ),
+          child: Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
         SizedBox(
           height: 110,
           child: (section.circles == null || section.circles!.isEmpty)
               ? const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Text('No artists in this line. Use menu to add.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                  child: Text('No artists in this line.', style: TextStyle(color: Colors.white38, fontSize: 13)),
                 )
               : ListView.builder(
                   scrollDirection: Axis.horizontal,
@@ -937,27 +807,16 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     return Container(
                       width: 80,
                       margin: const EdgeInsets.only(right: 12),
-                      child: InkWell(
-                        onTap: () {
-                          if (_isCircleRemoveMode) _confirmDeleteCircle(section, index);
-                        },
-                        child: Column(
-                          children: [
-                            const CircleAvatar(
-                              radius: 35,
-                              backgroundColor: Colors.white24,
-                              child: Icon(Icons.person, size: 35, color: Colors.white),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              circle.name,
-                              style: const TextStyle(fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
+                      child: Column(
+                        children: [
+                          const CircleAvatar(
+                            radius: 35,
+                            backgroundColor: Colors.white24,
+                            child: Icon(Icons.person, size: 35, color: Colors.white),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(circle.name, style: const TextStyle(fontSize: 12), maxLines: 1, textAlign: TextAlign.center),
+                        ],
                       ),
                     );
                   },
@@ -973,49 +832,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Icons.edit, size: 16, color: Colors.white38),
-                onPressed: () {
-                  final controller = TextEditingController(text: section.name);
-                  showDialog(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      backgroundColor: const Color(0xFF242424),
-                      title: Text('Rename ${section.name}'),
-                      content: TextField(controller: controller, style: const TextStyle(color: Colors.white)),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (controller.text.trim().isNotEmpty) {
-                              setState(() => section.name = controller.text.trim());
-                            }
-                            Navigator.pop(ctx);
-                          },
-                          child: const Text('Save'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close, size: 18, color: Colors.white38),
-                onPressed: () => setState(() => _homeSections.remove(section)),
-              ),
-            ],
-          ),
+          child: Text(section.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ),
         SizedBox(
           height: 120,
           child: (section.boxes == null || section.boxes!.isEmpty)
               ? const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Text('No boxes in this line. Use menu to add.', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                  child: Text('No boxes in this line.', style: TextStyle(color: Colors.white38, fontSize: 13)),
                 )
               : ListView.builder(
                   scrollDirection: Axis.horizontal,
@@ -1027,13 +851,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       width: 110,
                       margin: const EdgeInsets.only(right: 12),
                       child: InkWell(
-                        onTap: () {
-                          if (_isRemoveMode) {
-                            _confirmDeleteBox(section, index);
-                          } else {
-                            _openSpotifyStylePlaylist(box);
-                          }
-                        },
+                        onTap: () => _openSpotifyStylePlaylist(box),
                         child: Container(
                           decoration: BoxDecoration(
                             color: const Color(0xFF282828),
@@ -1064,90 +882,36 @@ class _MainTabScreenState extends State<MainTabScreen> {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF121212),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.9,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(ctx)),
-                      const Icon(Icons.more_vert),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(box.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  const Text('Custom curated playlist', style: TextStyle(color: Colors.white60, fontSize: 13)),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Spacer(),
-                      FloatingActionButton(
-                        backgroundColor: Colors.white,
-                        mini: true,
-                        onPressed: () {
-                          if (box.tracks.isNotEmpty) {
-                            Navigator.pop(ctx);
-                            _playTrack(box.tracks.first);
-                          }
-                        },
-                        child: const Icon(Icons.play_arrow, color: Colors.black),
-                      ),
-                    ],
-                  ),
-                  const Divider(color: Colors.white12, height: 24),
-                  Expanded(
-                    child: box.tracks.isEmpty
-                        ? const Center(child: Text('No tracks in this playlist.'))
-                        : ListView.builder(
-                            itemCount: box.tracks.length,
-                            itemBuilder: (context, index) {
-                              final track = box.tracks[index];
-                              final liked = _isLiked(track);
-
-                              return ListTile(
-                                leading: Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(4)),
-                                  child: const Icon(Icons.music_note, color: Colors.white54),
-                                ),
-                                title: Text(track.title, maxLines: 1),
-                                subtitle: Text(track.artist, maxLines: 1),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(liked ? Icons.favorite : Icons.favorite_border, color: liked ? Colors.white : Colors.white38),
-                                      onPressed: () {
-                                        _toggleLike(track);
-                                        setModalState(() {});
-                                        setState(() {});
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.more_vert, color: Colors.white38),
-                                      onPressed: () => _openTrack3DotsMenu(track),
-                                    ),
-                                  ],
-                                ),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  _playTrack(track);
-                                },
-                              );
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.9,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(ctx)),
+              const SizedBox(height: 10),
+              Text(box.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Expanded(
+                child: box.tracks.isEmpty
+                    ? const Center(child: Text('No tracks in this playlist.'))
+                    : ListView.builder(
+                        itemCount: box.tracks.length,
+                        itemBuilder: (context, index) {
+                          final track = box.tracks[index];
+                          return ListTile(
+                            title: Text(track.title),
+                            subtitle: Text(track.artist),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _playTrack(track);
                             },
-                          ),
-                  ),
-                ],
+                          );
+                        },
+                      ),
               ),
-            );
-          },
+            ],
+          ),
         );
       },
     );
@@ -1158,155 +922,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
       onPlayTrack: _playTrack,
       onToggleLike: _toggleLike,
       isLiked: _isLiked,
-      onAddToPlaylist: (track) {
-        setState(() => _playlist.add(track));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added "${track.title}" to YOUR LIBRARY')));
-      },
-      onOpenMenu: _openTrack3DotsMenu,
     );
   }
 
   Widget _buildPlaylistScreen() {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF121212),
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF121212),
-          elevation: 0,
-          title: const Text('Your Library'),
-          bottom: const TabBar(
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white54,
-            tabs: [
-              Tab(text: 'Playlists & Liked'),
-              Tab(text: 'Downloads'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  InkWell(
-                    onTap: _openLikedSongsDialog,
-                    child: Container(
-                      height: 70,
-                      width: double.infinity,
-                      decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(8)),
-                      child: Center(
-                        child: Text('Liked Songs (${_likedSongs.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text('Your Playlist', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: _playlist.isEmpty
-                        ? const Center(child: Text('Playlist is empty.'))
-                        : ListView.builder(
-                            itemCount: _playlist.length,
-                            itemBuilder: (context, index) {
-                              final track = _playlist[index];
-                              return ListTile(
-                                leading: const Icon(Icons.music_note, color: Colors.white),
-                                title: Text(track.title),
-                                subtitle: Text(track.artist),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.more_vert),
-                                  onPressed: () => _openTrack3DotsMenu(track),
-                                ),
-                                onTap: () => _playTrack(track),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Downloaded Songs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: _downloads.isEmpty
-                        ? const Center(child: Text('No downloaded songs yet.'))
-                        : ListView.builder(
-                            itemCount: _downloads.length,
-                            itemBuilder: (context, index) {
-                              final track = _downloads[index];
-                              return ListTile(
-                                leading: const Icon(Icons.download_done, color: Colors.white),
-                                title: Text(track.title),
-                                subtitle: Text(track.artist),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.more_vert),
-                                  onPressed: () => _openTrack3DotsMenu(track),
-                                ),
-                                onTap: () => _playTrack(track),
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openLikedSongsDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF181818),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Container(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Liked Songs', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _likedSongs.isEmpty
-                        ? const Center(child: Text('No liked songs.'))
-                        : ListView.builder(
-                            itemCount: _likedSongs.length,
-                            itemBuilder: (context, index) {
-                              final track = _likedSongs[index];
-                              return ListTile(
-                                title: Text(track.title),
-                                subtitle: Text(track.artist),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.more_vert),
-                                  onPressed: () => _openTrack3DotsMenu(track),
-                                ),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  _playTrack(track);
-                                },
-                              );
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    return const Scaffold(
+      backgroundColor: Color(0xFF121212),
+      body: Center(child: Text('Your Library')),
     );
   }
 }
@@ -1315,16 +937,12 @@ class ITunesSearchWidget extends StatefulWidget {
   final Function(TrackItem) onPlayTrack;
   final Function(TrackItem) onToggleLike;
   final bool Function(TrackItem) isLiked;
-  final Function(TrackItem) onAddToPlaylist;
-  final Function(TrackItem) onOpenMenu;
 
   const ITunesSearchWidget({
     super.key,
     required this.onPlayTrack,
     required this.onToggleLike,
     required this.isLiked,
-    required this.onAddToPlaylist,
-    required this.onOpenMenu,
   });
 
   @override
@@ -1354,11 +972,9 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> data = jsonDecode(response.body);
-        final List<dynamic> results = data['results'] ?? [];
-        
         if (mounted) {
           setState(() {
-            _searchResults = results;
+            _searchResults = data['results'] ?? [];
             _isLoading = false;
           });
         }
@@ -1367,7 +983,7 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
           setState(() {
             _searchResults = [];
             _isLoading = false;
-            _errorMessage = 'API HTTP ${response.statusCode}';
+            _errorMessage = 'HTTP Error ${response.statusCode}';
           });
         }
       }
@@ -1410,7 +1026,8 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
               padding: const EdgeInsets.symmetric(vertical: 8.0),
               child: Text(
                 'Search Error: $_errorMessage',
-                style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                textAlign: TextAlign.center,
               ),
             ),
           Expanded(
@@ -1428,30 +1045,12 @@ class _ITunesSearchWidgetState extends State<ITunesSearchWidget> {
                         artworkUrl: item['artworkUrl100'],
                       );
 
-                      final liked = widget.isLiked(track);
-
                       return ListTile(
                         leading: item['artworkUrl100'] != null
                             ? Image.network(item['artworkUrl100'], width: 48, height: 48, fit: BoxFit.cover)
                             : const Icon(Icons.music_note),
-                        title: Text(track.title),
-                        subtitle: Text(track.artist),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: Icon(liked ? Icons.favorite : Icons.favorite_border, color: liked ? Colors.white : Colors.white38),
-                              onPressed: () {
-                                widget.onToggleLike(track);
-                                setState(() {});
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.more_vert, color: Colors.white38),
-                              onPressed: () => widget.onOpenMenu(track),
-                            ),
-                          ],
-                        ),
+                        title: Text(track.title, maxLines: 1),
+                        subtitle: Text(track.artist, maxLines: 1),
                         onTap: () => widget.onPlayTrack(track),
                       );
                     },
