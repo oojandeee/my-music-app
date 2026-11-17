@@ -1,5 +1,5 @@
 name: my_music_app
-description: "A custom mobile music player app."
+description: "A custom mobile music preview app."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -12,11 +12,11 @@ dependencies:
     sdk: flutter
   http: ^1.2.0
   just_audio: ^0.9.36
-  share_plus: ^10.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
