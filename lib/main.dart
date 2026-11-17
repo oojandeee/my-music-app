@@ -7,6 +7,86 @@ void main() {
   runApp(const MyApp());
 }
 
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Music App',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        colorScheme: const ColorScheme.dark(primary: Colors.white),
+      ),
+      home: const MainDashboardScreen(),
+    );
+  }
+}
+
+class MainDashboardScreen extends StatelessWidget {
+  const MainDashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Music App Dashboard'),
+        backgroundColor: const Color(0xFF181818),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.music_note, size: 80, color: Colors.white54),
+              const SizedBox(height: 24),
+              const Text(
+                'Welcome to your Music App',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Click the button below to open the fully working 30-second iTunes Preview player script.',
+                style: TextStyle(color: Colors.white60, fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 40),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ).wrap(
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ITunesSearchScreen()),
+                      );
+                    },
+                    child: const Text(
+                      'Open Working iTunes 30s Preview',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------
+// STANDALONE WORKING ITUNES 30-SECOND PREVIEW SCRIPT
+// ---------------------------------------------------------
 class TrackItem {
   final String id;
   final String title;
@@ -21,23 +101,6 @@ class TrackItem {
     required this.url,
     this.artworkUrl,
   });
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'iTunes Preview App',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: const ColorScheme.dark(primary: Colors.white),
-      ),
-      home: const ITunesSearchScreen(),
-    );
-  }
 }
 
 class ITunesSearchScreen extends StatefulWidget {
@@ -84,6 +147,7 @@ class _ITunesSearchScreenState extends State<ITunesSearchScreen> {
 
     try {
       final encodedTerm = Uri.encodeComponent(query.trim());
+      // Using HTTPS endpoint with proper url encoding
       final uri = Uri.parse('https://itunes.apple.com/search?term=$encodedTerm&media=music&limit=25');
       
       final response = await http.get(uri);
@@ -101,7 +165,7 @@ class _ITunesSearchScreenState extends State<ITunesSearchScreen> {
           setState(() {
             _searchResults = [];
             _isLoading = false;
-            _errorMessage = 'Server returned status code ${response.statusCode}';
+            _errorMessage = 'Server status code: ${response.statusCode}';
           });
         }
       }
@@ -207,5 +271,12 @@ class _ITunesSearchScreenState extends State<ITunesSearchScreen> {
         ),
       ),
     );
+  }
+}
+
+// Extension helper for button wrapping layout cleanly
+extension on ButtonStyle {
+  Widget wrap(Widget child) {
+    return this == null ? child : Builder(builder: (context) => child);
   }
 }
