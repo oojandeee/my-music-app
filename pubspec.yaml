@@ -1,17 +1,19 @@
 name: my_music_app
-description: "A custom mobile music preview app."
-publish_to: 'none'
+description: "A custom mobile music streaming application featuring editable box layouts, circular artist carousels, local data persistence, and playback controls."
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
   just_audio: ^0.9.36
+  path_provider: ^2.1.2
+  share_plus: ^9.0.0
 
 dev_dependencies:
   flutter_test:
@@ -20,3 +22,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # To add assets like local images or fonts later, uncomment and configure below:
+  # assets:
+  #   - assets/images/
