@@ -143,7 +143,6 @@ class MainTabScreen extends StatefulWidget {
 }
 
 class _MainTabScreenState extends State<MainTabScreen> {
-  int _currentIndex = 0;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   List<HomeSection> _homeSections = [];
@@ -154,8 +153,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   TrackItem? _currentPlayingTrack;
   bool _isPlaying = false;
-  bool _isRemoveMode = false;
-  bool _isCircleRemoveMode = false;
 
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -501,15 +498,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top App Bar / Chips
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  CircleAvatar(backgroundColor: Colors.blue, child: const Text('G', style: TextStyle(color: Colors.white))),
+                  const CircleAvatar(backgroundColor: Colors.blue, child: Text('G', style: TextStyle(color: Colors.white))),
                   const SizedBox(width: 12),
-                  const Text('All', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                  // Filter Chips
+                  const Text('All', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -529,7 +524,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 100),
                 children: [
-                  // 1. Top 8 Small Shortcut Boxes Grid (2 rows x 4 columns)
+                  // Top 8 Small Shortcut Boxes Grid (2 rows x 4 columns)
                   Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: GridView.builder(
@@ -572,7 +567,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ),
                   ),
 
-                  // Render Home Sections (Circular Carousels & 4 Box Lines with 10 boxes each)
+                  // Home Sections (Circular Carousels & Box Lines)
                   ..._homeSections.map((section) {
                     if (section.type == HomeSectionType.circleLine) {
                       return Column(
@@ -615,7 +610,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ],
                       );
                     } else {
-                      // Box Line (10 boxes horizontal scroll)
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -635,7 +629,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                     if (box.tracks.isNotEmpty) {
                                       _playTrack(box.tracks.first);
                                     } else {
-                                      // Demo track fallback
                                       _playTrack(TrackItem(
                                         id: 'box_${bIndex}_track',
                                         title: '${box.name} Audio',
