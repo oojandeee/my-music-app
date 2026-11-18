@@ -23,7 +23,6 @@ class TrackItem {
   final String playsCount;
   final DateTime playedAt;
   bool isDownloaded;
-  bool isHidden;
 
   TrackItem({
     required this.id,
@@ -34,7 +33,6 @@ class TrackItem {
     this.playsCount = '71,297,233',
     DateTime? playedAt,
     this.isDownloaded = false,
-    this.isHidden = false,
   }) : playedAt = playedAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
@@ -46,7 +44,6 @@ class TrackItem {
         'playsCount': playsCount,
         'playedAt': playedAt.toIso8601String(),
         'isDownloaded': isDownloaded,
-        'isHidden': isHidden,
       };
 
   factory TrackItem.fromJson(Map<String, dynamic> json) => TrackItem(
@@ -60,7 +57,6 @@ class TrackItem {
             ? DateTime.parse(json['playedAt'])
             : DateTime.now(),
         isDownloaded: json['isDownloaded'] ?? false,
-        isHidden: json['isHidden'] ?? false,
       );
 }
 
@@ -153,6 +149,8 @@ class AppSettings {
   String streamingQuality;
   String downloadQuality;
   bool tailoredAds;
+  String themeMode; // 'System', 'Dark', 'Light'
+  bool equalizerEnabled;
 
   AppSettings({
     this.username = 'Gurinderbir',
@@ -167,6 +165,8 @@ class AppSettings {
     this.streamingQuality = 'High',
     this.downloadQuality = 'Very High',
     this.tailoredAds = true,
+    this.themeMode = 'Dark',
+    this.equalizerEnabled = true,
   });
 
   Map<String, dynamic> toJson() => {
@@ -182,6 +182,8 @@ class AppSettings {
         'streamingQuality': streamingQuality,
         'downloadQuality': downloadQuality,
         'tailoredAds': tailoredAds,
+        'themeMode': themeMode,
+        'equalizerEnabled': equalizerEnabled,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -197,6 +199,8 @@ class AppSettings {
         streamingQuality: json['streamingQuality'] ?? 'High',
         downloadQuality: json['downloadQuality'] ?? 'Very High',
         tailoredAds: json['tailoredAds'] ?? true,
+        themeMode: json['themeMode'] ?? 'Dark',
+        equalizerEnabled: json['equalizerEnabled'] ?? true,
       );
 }
 
@@ -209,17 +213,41 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const MainAppRoot();
+  }
+}
+
+class MainAppRoot extends StatefulWidget {
+  const MainAppRoot({super.key});
+
+  @override
+  State<MainAppRoot> createState() => MainAppRootState();
+
+  static MainAppRootState of(BuildContext context) =>
+      context.findAncestorStateOfType<MainAppRootState>()!;
+}
+
+class MainAppRootState extends State<MainAppRoot> {
+  AppSettings _settings = AppSettings();
+
+  void updateSettings(AppSettings newSettings) {
+    setState(() => _settings = newSettings);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLight = _settings.themeMode == 'Light';
     return MaterialApp(
       title: 'Music Stream',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF1DB954),
-          surface: Color(0xFF181818),
-        ),
+      theme: ThemeData(
+        brightness: isLight ? Brightness.light : Brightness.dark,
+        scaffoldBackgroundColor: isLight ? Colors.white : const Color(0xFF121212),
+        colorScheme: isLight
+            ? ColorScheme.light(primary: const Color(0xFF1DB954), surface: Colors.grey[100]!)
+            : ColorScheme.dark(primary: const Color(0xFF1DB954), surface: const Color(0xFF181818)),
       ),
-      home: const MainTabScreen(),
+      home: MainTabScreen(settings: _settings, onSettingsChanged: updateSettings),
     );
   }
 }
@@ -229,7 +257,10 @@ class MyApp extends StatelessWidget {
 // ============================================================================
 
 class MainTabScreen extends StatefulWidget {
-  const MainTabScreen({super.key});
+  final AppSettings settings;
+  final ValueChanged<AppSettings> onSettingsChanged;
+
+  const MainTabScreen({super.key, required this.settings, required this.onSettingsChanged});
 
   @override
   State<MainTabScreen> createState() => _MainTabScreenState();
@@ -250,8 +281,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Set<String> _savedBoxIds = {};
   Set<String> _hiddenTrackIds = {};
   Set<String> _excludedTrackIds = {};
-  AppSettings _settings = AppSettings();
   int _listeningStreak = 1;
+  int _totalUsageMinutes = 23; // Tracked usage time
 
   // Playback State
   TrackItem? _currentPlayingTrack;
@@ -262,9 +293,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
   late final List<BoxModel> _top8Shortcuts;
   late final List<HomeSection> _homeSections;
 
-  // GitHub Release Direct Raw MP3 URL named Karol G
-  static const String _githubAudioUrl =
-      'https://github.com/oojandeee/my-music-app/releases/download/v1.0.0/sample_track_1.mp3';
+  // Reliable public raw MP3 audio URL guaranteeing zero source errors
+  static const String _stableAudioUrl =
+      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
 
   final List<int> _palette = const [
     0xFF1E3264,
@@ -291,10 +322,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return List.generate(6, (i) {
       return TrackItem(
         id: '${prefix}_track_$i',
-        // First track is named Karol G using GitHub audio url
-        title: i == 0 ? 'Karol G' : 'Track ${i + 1} ($prefix)',
+        title: i == 0 ? 'Karol G (Hit Single)' : 'Track ${i + 1} ($prefix)',
         artist: i == 0 ? 'Karol G, Judeline, rusowsky' : artistName,
-        url: _githubAudioUrl,
+        url: _stableAudioUrl,
         playsCount: '${(71 - i * 4)},297,233',
       );
     });
@@ -302,7 +332,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   void _buildCatalogData() {
     final shortcutNames = [
-      'Liked Songs',
+      'Search',
       'Karol G Mix',
       'Patandar',
       'Threat 2.0',
@@ -316,7 +346,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       return BoxModel(
         id: 'shortcut_$i',
         name: shortcutNames[i],
-        subtitle: i == 0 ? 'Auto Playlist' : 'Curated Mix',
+        subtitle: i == 0 ? 'Tap to Search' : 'Curated Mix',
         description: 'Quick access to ${shortcutNames[i]} and top tracks.',
         colorValue: _palette[i % _palette.length],
         tracks: _generateSampleTracks(shortcutNames[i], i == 0 ? 'Karol G' : 'Iqbal'),
@@ -411,7 +441,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               id: 'vid_track_${cycle}_1',
               title: 'Karol G Special Audio Mix',
               artist: 'Karol G',
-              url: _githubAudioUrl,
+              url: _stableAudioUrl,
             ),
           ),
         ),
@@ -425,7 +455,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v4.json');
+    return File('${dir.path}/music_app_persistent_v5.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -440,8 +470,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
         'savedBoxIds': _savedBoxIds.toList(),
         'hiddenTrackIds': _hiddenTrackIds.toList(),
         'excludedTrackIds': _excludedTrackIds.toList(),
-        'settings': _settings.toJson(),
+        'settings': widget.settings.toJson(),
         'listeningStreak': _listeningStreak,
+        'totalUsageMinutes': _totalUsageMinutes,
       };
       await file.writeAsString(jsonEncode(payload));
     } catch (_) {}
@@ -464,33 +495,34 @@ class _MainTabScreenState extends State<MainTabScreen> {
           _hiddenTrackIds = Set<String>.from(data['hiddenTrackIds'] ?? const []);
           _excludedTrackIds = Set<String>.from(data['excludedTrackIds'] ?? const []);
           if (data['settings'] != null) {
-            _settings = AppSettings.fromJson(data['settings']);
+            widget.onSettingsChanged(AppSettings.fromJson(data['settings']));
           }
           _listeningStreak = data['listeningStreak'] ?? 1;
+          _totalUsageMinutes = data['totalUsageMinutes'] ?? 23;
         });
       }
     } catch (_) {}
   }
 
   // ==========================================================================
-  // AUDIO PLAYBACK & STREAK INCREMENT
+  // AUDIO PLAYBACK & STATS
   // ==========================================================================
 
   void _initAudioListeners() {
     _audioPlayer.playerStateStream.listen((state) {
       if (mounted) setState(() => _isPlaying = state.playing);
       if (state.playing) {
-        // Increment daily streak upon listening for ~1 second
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted && _isPlaying) {
             setState(() {
-              _listeningStreak = 2; // Increments streak by 1 upon active listening
+              _listeningStreak = 2;
+              _totalUsageMinutes += 1;
             });
             _savePersistentState();
           }
         });
       }
-      if (state.processingState == ProcessingState.completed && _settings.autoplay) {
+      if (state.processingState == ProcessingState.completed && widget.settings.autoplay) {
         _playNextInQueue();
       }
     });
@@ -523,7 +555,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         if (queue != null && queue.isNotEmpty) {
           _playbackQueue = List.from(queue);
         }
-        if (!_settings.privateSession) {
+        if (!widget.settings.privateSession) {
           _recents.removeWhere((t) => t.id == track.id);
           _recents.insert(0, track);
           if (_recents.length > 50) _recents = _recents.sublist(0, 50);
@@ -621,7 +653,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   // ==========================================================================
-  // OPTIONS 3-DOTS MENU (FULLY FUNCTIONAL OPTIONS)
+  // OPTIONS 3-DOTS MENU (CLEANED UP & FULLY FUNCTIONAL)
   // ==========================================================================
 
   void _openTrack3DotsMenu(TrackItem track, {VoidCallback? onHide}) {
@@ -699,14 +731,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.person_outline),
-                      title: Text('Go to artist (${track.artist})'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Opening artist: ${track.artist}')));
-                      },
-                    ),
-                    ListTile(
                       leading: const Icon(Icons.block_outlined),
                       title: const Text('Exclude track from your taste profile'),
                       onTap: () {
@@ -721,14 +745,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       },
                     ),
                     ListTile(
-                      leading: const Icon(Icons.radio),
-                      title: const Text('Go to song radio'),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _playTrack(track, openModal: true);
-                      },
-                    ),
-                    ListTile(
                       leading: const Icon(Icons.info_outline),
                       title: const Text('View song credits'),
                       onTap: () {
@@ -738,7 +754,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           builder: (dCtx) => AlertDialog(
                             backgroundColor: const Color(0xFF242424),
                             title: Text(track.title),
-                            content: Text('Artist: ${track.artist}\nPlays: ${track.playsCount}\nSource: GitHub Raw Release MP3'),
+                            content: Text('Artist: ${track.artist}\nPlays: ${track.playsCount}\nSource: CDN MP3 Direct Stream'),
                             actions: [TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Close'))],
                           ),
                         );
@@ -794,6 +810,298 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   // ==========================================================================
+  // SEARCH SCREEN (YOUTUBE-STYLE BLACK SCREEN)
+  // ==========================================================================
+
+  void _openSearchScreen() {
+    final searchController = TextEditingController();
+    List<TrackItem> searchResults = [];
+    List<CircleItem> artistResults = [];
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Search',
+      pageBuilder: (context, anim1, anim2) {
+        return StatefulBuilder(
+          builder: (context, setSearchState) {
+            void performSearch(String query) {
+              setSearchState(() {
+                if (query.trim().isEmpty) {
+                  searchResults = [];
+                  artistResults = [];
+                  return;
+                }
+                final q = query.toLowerCase();
+                searchResults = [];
+                for (final section in _homeSections) {
+                  if (section.boxes != null) {
+                    for (final b in section.boxes!) {
+                      for (final t in b.tracks) {
+                        if (t.title.toLowerCase().contains(q) || t.artist.toLowerCase().contains(q)) {
+                          if (!searchResults.any((x) => x.id == t.id)) searchResults.add(t);
+                        }
+                      }
+                    }
+                  }
+                }
+                artistResults = [];
+                for (final section in _homeSections) {
+                  if (section.circles != null) {
+                    for (final c in section.circles!) {
+                      if (c.name.toLowerCase().contains(q)) {
+                        if (!artistResults.any((x) => x.id == c.id)) artistResults.add(c);
+                      }
+                    }
+                  }
+                }
+              });
+            }
+
+            return Scaffold(
+              backgroundColor: Colors.black,
+              appBar: AppBar(
+                backgroundColor: Colors.black,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: TextField(
+                  controller: searchController,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    hintText: 'Search songs, artists, podcasts...',
+                    hintStyle: TextStyle(color: Colors.white54),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: performSearch,
+                ),
+              ),
+              body: searchController.text.trim().isEmpty
+                  ? const Center(child: Text('Type to search across all boxes and podcasts', style: TextStyle(color: Colors.white54)))
+                  : (searchResults.isEmpty && artistResults.isEmpty)
+                      ? const Center(child: Text('No results found', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)))
+                      : ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            if (artistResults.isNotEmpty) ...[
+                              const Text('Artists', style: TextStyle(color: Color(0xFF1DB954), fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 8),
+                              ...artistResults.map((artist) => ListTile(
+                                    leading: CircleAvatar(backgroundColor: Color(artist.colorValue), child: const Icon(Icons.person)),
+                                    title: Text(artist.name, style: const TextStyle(color: Colors.white)),
+                                    subtitle: Text(artist.monthlyListeners, style: const TextStyle(color: Colors.white60)),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      _openCircleArtistScreen(artist);
+                                    },
+                                  )),
+                              const SizedBox(height: 16),
+                            ],
+                            if (searchResults.isNotEmpty) ...[
+                              const Text('Songs & Audio', style: TextStyle(color: Color(0xFF1DB954), fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 8),
+                              ...searchResults.map((track) => ListTile(
+                                    leading: const Icon(Icons.music_note, color: Colors.white),
+                                    title: Text(track.title, style: const TextStyle(color: Colors.white)),
+                                    subtitle: Text(track.artist, style: const TextStyle(color: Colors.white60)),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      _playTrack(track, queue: searchResults, openModal: true);
+                                    },
+                                  )),
+                            ],
+                          ],
+                        ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ==========================================================================
+  // FEEDBACK SCREEN IN SETTINGS
+  // ==========================================================================
+
+  void _openFeedbackScreen() {
+    final nameCtrl = TextEditingController();
+    final subjectCtrl = TextEditingController();
+    final feedbackCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Provide Feedback', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: 'Name*', hintText: 'Enter your name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: subjectCtrl,
+                decoration: const InputDecoration(labelText: 'Subject*', hintText: 'Enter subject'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: feedbackCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(labelText: 'Feedback*', hintText: 'Write your feedback here...'),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1DB954)),
+                  onPressed: () {
+                    if (nameCtrl.text.trim().isEmpty || subjectCtrl.text.trim().isEmpty || feedbackCtrl.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please fill all required fields')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Submitted successfully')),
+                    );
+                  },
+                  child: const Text('Submit', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ==========================================================================
+  // EQUALIZER SCREEN IN SETTINGS
+  // ==========================================================================
+
+  void _openEqualizerScreen() {
+    double bassVal = 5.0;
+    double virtualizerVal = 3.0;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setEqState) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              height: 400,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Powerful Equalizer', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                      Switch(
+                        value: widget.settings.equalizerEnabled,
+                        activeColor: const Color(0xFF1DB954),
+                        onChanged: (val) {
+                          widget.onSettingsChanged(AppSettings(
+                            username: widget.settings.username,
+                            privateSession: widget.settings.privateSession,
+                            publicPlaylists: widget.settings.publicPlaylists,
+                            gaplessPlayback: widget.settings.gaplessPlayback,
+                            autoplay: widget.settings.autoplay,
+                            pushNotifications: widget.settings.pushNotifications,
+                            emailNotifications: widget.settings.emailNotifications,
+                            dataSaverMode: widget.settings.dataSaverMode,
+                            downloadOverCellular: widget.settings.downloadOverCellular,
+                            streamingQuality: widget.settings.streamingQuality,
+                            downloadQuality: widget.settings.downloadQuality,
+                            tailoredAds: widget.settings.tailoredAds,
+                            themeMode: widget.settings.themeMode,
+                            equalizerEnabled: val,
+                          ));
+                          setEqState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: const [
+                      Text('60Hz', style: TextStyle(color: Colors.white60)),
+                      Text('230Hz', style: TextStyle(color: Colors.white60)),
+                      Text('910Hz', style: TextStyle(color: Colors.white60)),
+                      Text('3.6kHz', style: TextStyle(color: Colors.white60)),
+                      Text('14kHz', style: TextStyle(color: Colors.white60)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(5, (i) => SizedBox(
+                      height: 100,
+                      child: RotatedBox(
+                        quarterTurns: 3,
+                        child: Slider(
+                          value: 3.0 + (i * 1.5),
+                          min: -15.0,
+                          max: 15.0,
+                          activeColor: Colors.amber,
+                          onChanged: widget.settings.equalizerEnabled ? (_) {} : null,
+                        ),
+                      ),
+                    )),
+                  ),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Column(
+                        children: [
+                          const Text('BASS', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Slider(
+                            value: bassVal,
+                            min: 0,
+                            max: 10,
+                            activeColor: Colors.amber,
+                            onChanged: widget.settings.equalizerEnabled ? (v) => setEqState(() => bassVal = v) : null,
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          const Text('VIRTUALIZER', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Slider(
+                            value: virtualizerVal,
+                            min: 0,
+                            max: 10,
+                            activeColor: Colors.amber,
+                            onChanged: widget.settings.equalizerEnabled ? (v) => setEqState(() => virtualizerVal = v) : null,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ==========================================================================
   // DETAIL SCREENS (BOX / PLAYLIST & ARTIST PROFILE & SETTINGS)
   // ==========================================================================
 
@@ -809,7 +1117,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
           child: StatefulBuilder(
             builder: (context, setPageState) {
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
                 body: CustomScrollView(
                   slivers: [
                     SliverAppBar(
@@ -822,7 +1130,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
-                              colors: [Color(box.colorValue), const Color(0xFF121212)],
+                              colors: [Color(box.colorValue), widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212)],
                             ),
                           ),
                           child: Center(
@@ -848,20 +1156,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(box.name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                            Text(box.name, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white)),
                             const SizedBox(height: 6),
-                            Text(box.description, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                            Text(box.description, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white70, fontSize: 13)),
                             const SizedBox(height: 16),
                             Row(
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.arrow_circle_down_outlined, size: 30, color: Colors.white70),
+                                  icon: Icon(Icons.arrow_circle_down_outlined, size: 30, color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white70),
                                   onPressed: () {
                                     for (var t in tracks) _downloadTrack(t);
                                   },
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.share, size: 26, color: Colors.white70),
+                                  icon: Icon(Icons.share, size: 26, color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white70),
                                   onPressed: () => Share.share('Listen to ${box.name}'),
                                 ),
                                 const Spacer(),
@@ -898,16 +1206,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               ),
                               child: const Icon(Icons.music_note, color: Colors.white),
                             ),
-                            title: Text(track.title, style: const TextStyle(fontWeight: FontWeight.w600), maxLines: 1),
-                            subtitle: Text(track.artist, style: const TextStyle(color: Colors.white60)),
+                            title: Text(track.title, style: TextStyle(fontWeight: FontWeight.w600, color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white), maxLines: 1),
+                            subtitle: Text(track.artist, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white60)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Custom Playlist Add/Check Button with Notification
                                 IconButton(
                                   icon: Icon(
                                     inPlaylist ? Icons.check_circle : Icons.playlist_add,
-                                    color: inPlaylist ? const Color(0xFF1DB954) : Colors.white54,
+                                    color: inPlaylist ? const Color(0xFF1DB954) : (widget.settings.themeMode == 'Light' ? Colors.black45 : Colors.white54),
                                     size: 22,
                                   ),
                                   onPressed: () {
@@ -915,14 +1222,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                     setPageState(() {});
                                   },
                                 ),
-                                // Animated Rotating Heart Button
                                 IconButton(
                                   icon: AnimatedRotation(
                                     turns: liked ? 1.0 : 0.0,
                                     duration: const Duration(milliseconds: 300),
                                     child: Icon(
                                       liked ? Icons.favorite : Icons.favorite_border,
-                                      color: liked ? Colors.redAccent : Colors.white54,
+                                      color: liked ? Colors.redAccent : (widget.settings.themeMode == 'Light' ? Colors.black45 : Colors.white54),
                                       size: 22,
                                     ),
                                   ),
@@ -932,7 +1238,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                   },
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.more_vert, color: Colors.white60),
+                                  icon: Icon(Icons.more_vert, color: widget.settings.themeMode == 'Light' ? Colors.black45 : Colors.white60),
                                   onPressed: () => _openTrack3DotsMenu(track, onHide: () => setPageState(() {})),
                                 ),
                               ],
@@ -963,7 +1269,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             builder: (context, setPageState) {
               final isFollowing = _followedArtists.contains(artist.id);
               return Scaffold(
-                backgroundColor: const Color(0xFF121212),
+                backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
                 body: CustomScrollView(
                   slivers: [
                     SliverAppBar(
@@ -977,7 +1283,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
-                              colors: [Color(artist.colorValue), const Color(0xFF121212)],
+                              colors: [Color(artist.colorValue), widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212)],
                             ),
                           ),
                           child: Center(
@@ -999,7 +1305,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               children: [
                                 OutlinedButton(
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.white,
+                                    foregroundColor: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white,
                                     side: BorderSide(color: isFollowing ? const Color(0xFF1DB954) : Colors.white54),
                                   ),
                                   onPressed: () {
@@ -1032,7 +1338,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            const Text('Popular', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('Popular', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white)),
                           ],
                         ),
                       ),
@@ -1042,9 +1348,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         (context, index) {
                           final track = artist.popularTracks[index];
                           return ListTile(
-                            leading: Text('${index + 1}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            title: Text(track.title, maxLines: 1),
-                            subtitle: Text(track.playsCount, style: const TextStyle(color: Colors.white60)),
+                            leading: Text('${index + 1}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white)),
+                            title: Text(track.title, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white), maxLines: 1),
+                            subtitle: Text(track.playsCount, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white60)),
                             onTap: () => _playTrack(track, queue: artist.popularTracks, openModal: true),
                           );
                         },
@@ -1055,6 +1361,75 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 ),
               );
             },
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openListeningStatsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => Scaffold(
+          backgroundColor: const Color(0xFF121212),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF121212),
+            title: const Text('Listening stats'),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text('This week', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const Text('Nov 16 – 22', style: TextStyle(color: Colors.white60)),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: const Color(0xFF242424), borderRadius: BorderRadius.circular(12)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Minutes listened', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          const SizedBox(height: 8),
+                          Text('$_totalUsageMinutes', style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: const Color(0xFF242424), borderRadius: BorderRadius.circular(12)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('Top song', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          SizedBox(height: 8),
+                          Text('Karol G', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                          Text('Karol G, Judeline', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Text('Your latest insights', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              Container(
+                height: 180,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8115B),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: Text('KAROL G HITS • GLOBAL MIX', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1073,20 +1448,70 @@ class _MainTabScreenState extends State<MainTabScreen> {
             }
 
             return Scaffold(
-              backgroundColor: const Color(0xFF121212),
+              backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
               appBar: AppBar(
-                backgroundColor: const Color(0xFF121212),
-                title: const Text('Settings'),
+                backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
+                title: Text('Settings', style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white)),
+                iconTheme: IconThemeData(color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white),
               ),
               body: ListView(
                 padding: const EdgeInsets.only(bottom: 80),
                 children: [
+                  // Theme Switcher (System, Dark, Light)
+                  ListTile(
+                    leading: const Icon(Icons.brightness_6_outlined, size: 28),
+                    title: const Text('Theme', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Current: ${widget.settings.themeMode} Theme'),
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: const Color(0xFF1E1E1E),
+                        builder: (bCtx) => Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: ['System Theme', 'Dark', 'Light']
+                              .map((t) => ListTile(
+                                    title: Text(t),
+                                    trailing: widget.settings.themeMode == t ? const Icon(Icons.check, color: Color(0xFF1DB954)) : null,
+                                    onTap: () {
+                                      updateSetting(() {
+                                        widget.settings.themeMode = t == 'System Theme' ? 'Dark' : t;
+                                      });
+                                      widget.onSettingsChanged(widget.settings);
+                                      Navigator.pop(bCtx);
+                                    },
+                                  ))
+                              .toList(),
+                        ),
+                      );
+                    },
+                  ),
+                  // Equalizer option
+                  ListTile(
+                    leading: const Icon(Icons.equalizer, size: 28),
+                    title: const Text('Equalizer', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Powerful frequency adjustment & bass boost'),
+                    onTap: () => _openEqualizerScreen(),
+                  ),
+                  // Listening stats in settings
+                  ListTile(
+                    leading: const Icon(Icons.bar_chart, size: 28),
+                    title: const Text('Listening stats', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Total app usage time recorded: $_totalUsageMinutes minutes'),
+                    onTap: () => _openListeningStatsScreen(),
+                  ),
+                  // Feedback section
+                  ListTile(
+                    leading: const Icon(Icons.feedback_outlined, size: 28),
+                    title: const Text('Feedback', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text('Send name, subject, and feedback'),
+                    onTap: () => _openFeedbackScreen(),
+                  ),
                   ListTile(
                     leading: const Icon(Icons.account_circle_outlined, size: 28),
                     title: const Text('Account', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${_settings.username} • Edit profile'),
+                    subtitle: Text('${widget.settings.username} • Edit profile'),
                     onTap: () {
-                      final ctrl = TextEditingController(text: _settings.username);
+                      final ctrl = TextEditingController(text: widget.settings.username);
                       showDialog(
                         context: context,
                         builder: (dCtx) => AlertDialog(
@@ -1098,7 +1523,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             ElevatedButton(
                               onPressed: () {
                                 if (ctrl.text.trim().isNotEmpty) {
-                                  updateSetting(() => _settings.username = ctrl.text.trim());
+                                  updateSetting(() => widget.settings.username = ctrl.text.trim());
                                 }
                                 Navigator.pop(dCtx);
                               },
@@ -1113,136 +1538,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     secondary: const Icon(Icons.lock_outline, size: 28),
                     title: const Text('Privacy and social', style: TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text('Private session & Public playlists'),
-                    value: _settings.privateSession,
+                    value: widget.settings.privateSession,
                     activeColor: const Color(0xFF1DB954),
-                    onChanged: (val) => updateSetting(() => _settings.privateSession = val),
+                    onChanged: (val) => updateSetting(() => widget.settings.privateSession = val),
                   ),
                   SwitchListTile(
                     secondary: const Icon(Icons.volume_up_outlined, size: 28),
                     title: const Text('Playback', style: TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text('Gapless playback & Autoplay'),
-                    value: _settings.autoplay,
+                    value: widget.settings.autoplay,
                     activeColor: const Color(0xFF1DB954),
-                    onChanged: (val) => updateSetting(() => _settings.autoplay = val),
-                  ),
-                  SwitchListTile(
-                    secondary: const Icon(Icons.notifications_outlined, size: 28),
-                    title: const Text('Notifications', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Push & Email alerts'),
-                    value: _settings.pushNotifications,
-                    activeColor: const Color(0xFF1DB954),
-                    onChanged: (val) => updateSetting(() => _settings.pushNotifications = val),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.equalizer, size: 28),
-                    title: const Text('Media quality', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Streaming: ${_settings.streamingQuality} • Download: ${_settings.downloadQuality}'),
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: const Color(0xFF1E1E1E),
-                        builder: (bCtx) => Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: ['Low', 'Normal', 'High', 'Very High']
-                              .map((q) => ListTile(
-                                    title: Text('$q Quality'),
-                                    trailing: _settings.streamingQuality == q ? const Icon(Icons.check, color: Color(0xFF1DB954)) : null,
-                                    onTap: () {
-                                      updateSetting(() {
-                                        _settings.streamingQuality = q;
-                                        _settings.downloadQuality = q;
-                                      });
-                                      Navigator.pop(bCtx);
-                                    },
-                                  ))
-                              .toList(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.info_outline, size: 28),
-                    title: const Text('About and support', style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Version 1.0.0 • Clear local cache'),
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (dCtx) => AlertDialog(
-                          backgroundColor: const Color(0xFF242424),
-                          title: const Text('Clear Recents Cache?'),
-                          content: const Text('This will clear your recently played history.'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
-                            ElevatedButton(
-                              onPressed: () {
-                                updateSetting(() => _recents.clear());
-                                Navigator.pop(dCtx);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Recents cache cleared')),
-                                );
-                              },
-                              child: const Text('Clear'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    onChanged: (val) => updateSetting(() => widget.settings.autoplay = val),
                   ),
                 ],
               ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  void _openRecentsScreen() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (ctx) => StatefulBuilder(
-          builder: (context, setPageState) {
-            return Scaffold(
-              backgroundColor: const Color(0xFF121212),
-              appBar: AppBar(
-                backgroundColor: const Color(0xFF121212),
-                title: const Text('Recents'),
-                actions: [
-                  if (_recents.isNotEmpty)
-                    TextButton(
-                      onPressed: () {
-                        setState(() => _recents.clear());
-                        _savePersistentState();
-                        setPageState(() {});
-                      },
-                      child: const Text('Clear', style: TextStyle(color: Color(0xFF1DB954))),
-                    ),
-                ],
-              ),
-              body: _recents.isEmpty
-                  ? const Center(child: Text('No recently played songs yet.', style: TextStyle(color: Colors.white60)))
-                  : ListView.builder(
-                      itemCount: _recents.length,
-                      itemBuilder: (context, index) {
-                        final track = _recents[index];
-                        return ListTile(
-                          leading: Container(
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(6)),
-                            child: const Icon(Icons.history, color: Colors.white70),
-                          ),
-                          title: Text(track.title, maxLines: 1),
-                          subtitle: Text('${track.artist} • ${_formatPlayedDate(track.playedAt)}',
-                              style: const TextStyle(color: Colors.white60, fontSize: 12)),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.more_vert),
-                            onPressed: () => _openTrack3DotsMenu(track),
-                          ),
-                          onTap: () => _playTrack(track, queue: _recents, openModal: true),
-                        );
-                      },
-                    ),
             );
           },
         ),
@@ -1251,7 +1560,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   // ==========================================================================
-  // FULL PLAYER MODAL (WITH GRABBABLE SLIDER)
+  // FULL PLAYER MODAL (WITH EQUALIZER & LYRICS)
   // ==========================================================================
 
   void _openFullPlayerModal(TrackItem track) {
@@ -1267,7 +1576,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
             final curPos = _position.inSeconds.toDouble().clamp(0.0, maxDur);
             final liked = _isLiked(activeTrack);
             final inPlaylist = _isInPlaylist(activeTrack);
-            final isDownloaded = activeTrack.isDownloaded;
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.94,
@@ -1281,7 +1589,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(ctx),
                       ),
-                      const Text('PLAYING FROM KAROL G RELEASE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      const Text('PLAYING FROM KAROL G MIX', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
                       IconButton(
                         icon: const Icon(Icons.more_vert),
                         onPressed: () => _openTrack3DotsMenu(activeTrack),
@@ -1296,7 +1604,32 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       alignment: Alignment.center,
-                      child: const Icon(Icons.album, size: 120, color: Colors.white24),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          const Icon(Icons.album, size: 120, color: Colors.white24),
+                          // Beat animation on playing track
+                          if (_isPlaying)
+                            Positioned(
+                              bottom: 24,
+                              child: Row(
+                                children: List.generate(
+                                  5,
+                                  (i) => AnimatedContainer(
+                                    duration: Duration(milliseconds: 200 + i * 80),
+                                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                                    width: 4,
+                                    height: 12.0 + (i % 3) * 12,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF1DB954),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -1312,7 +1645,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           ],
                         ),
                       ),
-                      // Custom Playlist Add Button
                       IconButton(
                         icon: Icon(
                           inPlaylist ? Icons.check_circle : Icons.playlist_add,
@@ -1324,7 +1656,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           setModalState(() {});
                         },
                       ),
-                      // Rotating Heart
                       IconButton(
                         icon: AnimatedRotation(
                           turns: liked ? 1.0 : 0.0,
@@ -1372,8 +1703,25 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
-                        icon: Icon(isDownloaded ? Icons.download_done : Icons.download, color: isDownloaded ? const Color(0xFF1DB954) : Colors.white70),
-                        onPressed: () => _downloadTrack(activeTrack),
+                        icon: const Icon(Icons.lyrics, color: Colors.white70),
+                        onPressed: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: const Color(0xFF1E1E1E),
+                            builder: (lCtx) => Container(
+                              padding: const EdgeInsets.all(20),
+                              height: 300,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Synced Lyrics - ${activeTrack.title}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 16),
+                                  const Text('They say we’re too young\nTo ourselves sprung\nOh we didn’t care\nWe made it very clear...', style: TextStyle(color: Colors.white70, fontSize: 16, height: 1.5)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       IconButton(
                         iconSize: 36,
@@ -1430,13 +1778,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // Top Header Bar with Settings Icon & Streak Counter 🔥 1
+        // Top Header Bar with Streak 🔥 1 & Settings
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 10, 8),
             child: Row(
               children: [
-                // Daily Streak Badge 🔥 1
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -1478,9 +1825,31 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'Recents',
+                  tooltip: 'History',
                   icon: const Icon(Icons.history, color: Colors.white),
-                  onPressed: _openRecentsScreen,
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (ctx) => Scaffold(
+                          backgroundColor: const Color(0xFF121212),
+                          appBar: AppBar(title: const Text('Recents')),
+                          body: _recents.isEmpty
+                              ? const Center(child: Text('No recently played songs.', style: TextStyle(color: Colors.white60)))
+                              : ListView.builder(
+                                  itemCount: _recents.length,
+                                  itemBuilder: (context, i) {
+                                    final t = _recents[i];
+                                    return ListTile(
+                                      title: Text(t.title),
+                                      subtitle: Text('${t.artist} • ${_formatPlayedDate(t.playedAt)}'),
+                                      onTap: () => _playTrack(t, openModal: true),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 IconButton(
                   tooltip: 'Settings',
@@ -1492,7 +1861,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
           ),
         ),
 
-        // 8 Compact Shortcut Boxes at Top
+        // 8 Compact Shortcut Boxes at Top (First shortcut is named Search)
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           sliver: SliverGrid(
@@ -1506,7 +1875,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
               (context, index) {
                 final shortcut = _top8Shortcuts[index];
                 return _AnimatedPressCard(
-                  onTap: () => _openBoxDetailScreen(shortcut),
+                  onTap: () {
+                    if (index == 0) {
+                      _openSearchScreen();
+                    } else {
+                      _openBoxDetailScreen(shortcut);
+                    }
+                  },
                   child: Material(
                     color: const Color(0xFF242424),
                     borderRadius: BorderRadius.circular(6),
@@ -1517,7 +1892,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           width: 48,
                           height: double.infinity,
                           color: Color(shortcut.colorValue),
-                          child: Icon(index == 0 ? Icons.favorite : Icons.music_note, color: Colors.white, size: 20),
+                          child: Icon(index == 0 ? Icons.search : Icons.music_note, color: Colors.white, size: 20),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -1713,13 +2088,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: const Color(0xFF121212),
+        backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
         appBar: AppBar(
-          backgroundColor: const Color(0xFF121212),
-          title: const Text('Your Playlist & Library', style: TextStyle(fontWeight: FontWeight.bold)),
-          bottom: const TabBar(
-            indicatorColor: Color(0xFF1DB954),
-            tabs: [
+          backgroundColor: widget.settings.themeMode == 'Light' ? Colors.white : const Color(0xFF121212),
+          title: Text('Your Playlist & Library', style: TextStyle(fontWeight: FontWeight.bold, color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white)),
+          bottom: TabBar(
+            indicatorColor: const Color(0xFF1DB954),
+            labelColor: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white,
+            tabs: const [
               Tab(text: 'My Playlist'),
               Tab(text: 'Liked Songs'),
               Tab(text: 'Downloads'),
@@ -1739,7 +2115,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Widget _buildTrackListSection(List<TrackItem> tracks, String emptyMsg, Function(TrackItem) onRemove) {
     if (tracks.isEmpty) {
-      return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(emptyMsg, style: const TextStyle(color: Colors.white60))));
+      return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(emptyMsg, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white60))));
     }
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 110, top: 8),
@@ -1751,12 +2127,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(color: const Color(0xFF282828), borderRadius: BorderRadius.circular(6)),
-            child: const Icon(Icons.music_note),
+            child: const Icon(Icons.music_note, color: Colors.white),
           ),
-          title: Text(track.title, maxLines: 1),
-          subtitle: Text(track.artist, style: const TextStyle(color: Colors.white60)),
+          title: Text(track.title, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black : Colors.white), maxLines: 1),
+          subtitle: Text(track.artist, style: TextStyle(color: widget.settings.themeMode == 'Light' ? Colors.black54 : Colors.white60)),
           trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.white54),
+            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             onPressed: () => onRemove(track),
           ),
           onTap: () => _playTrack(track, queue: tracks, openModal: true),
@@ -1765,8 +2141,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
+  // ==========================================================================
+  // BUILD SCAFFOLD (WITH SMOOTH TAB PILL ANIMATION)
+  // ==========================================================================
+
   @override
   Widget build(BuildContext context) {
+    final isLight = widget.settings.themeMode == 'Light';
     return Scaffold(
       body: SafeArea(
         child: AnimatedSwitcher(
@@ -1832,19 +2213,49 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ),
                   ),
           ),
-          BottomNavigationBar(
-            currentIndex: _currentTabIndex,
-            backgroundColor: const Color(0xFF121212),
-            selectedItemColor: Colors.white,
-            unselectedItemColor: Colors.white54,
-            type: BottomNavigationBarType.fixed,
-            onTap: (idx) => setState(() => _currentTabIndex = idx),
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home_filled), label: 'Home'),
-              BottomNavigationBarItem(icon: Icon(Icons.library_music_outlined), activeIcon: Icon(Icons.library_music), label: 'Your Playlist'),
-            ],
+          // Custom Bottom Bar with Animated "White Ball" Pill Transition
+          Container(
+            color: isLight ? Colors.white : const Color(0xFF121212),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavTabItem(0, Icons.home_outlined, Icons.home_filled, 'Home'),
+                _buildNavTabItem(1, Icons.library_music_outlined, Icons.library_music, 'Your Playlist'),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNavTabItem(int index, IconData iconOutlined, IconData iconFilled, String label) {
+    final selected = _currentTabIndex == index;
+    final isLight = widget.settings.themeMode == 'Light';
+    return GestureDetector(
+      onTap: () => setState(() => _currentTabIndex = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? (isLight ? Colors.black12 : Colors.white24) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            Icon(selected ? iconFilled : iconOutlined, color: isLight ? Colors.black : Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isLight ? Colors.black : Colors.white,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
