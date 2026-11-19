@@ -185,7 +185,7 @@ class UserProfileData {
         phone: json['phone'] ?? '',
         city: json['city'] ?? '',
         address: json['address'] ?? '',
-        selectedAvatarIndex: json['selectedAvatarIndex'],
+        selectedAvatarIndex: (json['selectedAvatarIndex'] as num?)?.toInt(),
         isCreated: json['isCreated'] ?? false,
       );
 }
@@ -403,7 +403,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     0xFFAF2896,
   ];
 
-  static const List> _avatarCatalog = [
+  static const _avatarCatalog = [
     {'name': 'Beat King', 'icon': Icons.headphones, 'bg': 0xFF1DB954},
     {'name': 'Star Boy', 'icon': Icons.star_rounded, 'bg': 0xFFE8115B},
     {'name': 'Cyber DJ', 'icon': Icons.graphic_eq, 'bg': 0xFF0D73EC},
@@ -641,7 +641,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   int _expRequiredForLevel(int level) {
-    return 200 + (level - 1) * 150;
+    return (200 + (level - 1) * 150).toInt();
   }
 
   int get _expIntoCurrentLevel {
@@ -662,10 +662,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
   int get _expNeededForNextLevel => _expRequiredForLevel(_currentLevel);
 
   void _grantExp(int baseExp) {
-    final int earned = _isDoubleExpActive ? baseExp * 2 : baseExp;
+    final int earned = _isDoubleExpActive ? (baseExp * 2).toInt() : baseExp;
     final int oldLv = _currentLevel;
     setState(() {
-      _totalExp += earned;
+      _totalExp = (_totalExp + earned).toInt();
     });
     final int newLv = _currentLevel;
     if (newLv > oldLv && mounted) {
@@ -748,12 +748,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   List<TrackItem> _generateSampleTracks(String prefix, String artistName) {
     return List.generate(6, (i) {
+      final int playNum = (71 - i * 4).clamp(1, 99).toInt();
       return TrackItem(
         id: '${prefix}_track_$i',
         title: i == 0 ? 'Karol G (Hit Single)' : 'Track ${i + 1} ($prefix)',
         artist: i == 0 ? 'Karol G, Judeline, rusowsky' : artistName,
         assetPath: _bundledAssetPath,
-        playsCount: '${(71 - i * 4).clamp(1, 99)},297,233',
+        playsCount: '$playNum,297,233',
       );
     });
   }
@@ -810,7 +811,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     for (int cycle = 0; cycle < 3; cycle++) {
       for (int l = 0; l < 4; l++) {
         final lineTitle = lineTitles[boxLineCounter % lineTitles.length];
-        final currentLineIdx = boxLineCounter;
+        final int currentLineIdx = boxLineCounter;
         _homeSections.add(
           HomeSection(
             id: 'box_line_${cycle}_$l',
@@ -820,14 +821,17 @@ class _MainTabScreenState extends State<MainTabScreen> {
               final boxName = b == 0 && cycle == 0 && l == 0
                   ? 'Karol G Hits'
                   : '$lineTitle #${b + 1}';
-              final artist =
-                  artistNames[(currentLineIdx + b) % artistNames.length];
+              final int artistIdx =
+                  ((currentLineIdx + b) % artistNames.length).toInt();
+              final artist = artistNames[artistIdx];
+              final int colorIdx =
+                  ((currentLineIdx + b) % _palette.length).toInt();
               return BoxModel(
                 id: 'box_${cycle}_${l}_$b',
                 name: boxName,
                 subtitle: b % 2 == 0 ? 'Album • $artist' : 'Playlist',
                 description: 'The latest & grandest hits. Cover: $artist',
-                colorValue: _palette[(currentLineIdx + b) % _palette.length],
+                colorValue: _palette[colorIdx],
                 tracks: _generateSampleTracks(boxName, artist),
               );
             }),
@@ -836,7 +840,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         boxLineCounter++;
       }
 
-      final cIdx = circleLineCounter;
+      final int cIdx = circleLineCounter;
       _homeSections.add(
         HomeSection(
           id: 'circle_line_$cycle',
@@ -845,12 +849,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ? 'Your favorite artists'
               : 'Suggested artists ${cycle + 1}',
           circles: List.generate(6, (c) {
-            final name = artistNames[(cIdx * 6 + c) % artistNames.length];
+            final int artistIdx = ((cIdx * 6 + c) % artistNames.length).toInt();
+            final name = artistNames[artistIdx];
+            final int listeners = (893 - c * 45).clamp(100, 999).toInt();
+            final int colorIdx = ((c + cycle + 2) % _palette.length).toInt();
             return CircleItem(
               id: 'artist_${cycle}_$c',
               name: name,
-              monthlyListeners: '${(893 - c * 45).clamp(100, 999)}K monthly listeners',
-              colorValue: _palette[(c + cycle + 2) % _palette.length],
+              monthlyListeners: '${listeners}K monthly listeners',
+              colorValue: _palette[colorIdx],
               popularTracks: _generateSampleTracks(name, name),
             );
           }),
@@ -887,7 +894,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v7.json');
+    return File('${dir.path}/music_app_persistent_v8.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -923,41 +930,47 @@ class _MainTabScreenState extends State<MainTabScreen> {
     } catch (_) {}
   }
 
+  List<TrackItem> _parseTrackList(dynamic rawList) {
+    final result = <TrackItem>[];
+    if (rawList is Iterable) {
+      for (final item in rawList) {
+        if (item is Map<String, dynamic>) {
+          result.add(TrackItem.fromJson(item));
+        } else if (item is Map) {
+          result.add(TrackItem.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+    return result;
+  }
+
   Future<void> _loadPersistentState() async {
     try {
       final file = await _getStateFile();
       if (await file.exists()) {
         final raw = await file.readAsString();
-        final data = jsonDecode(raw) as Map<String, dynamic>;
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) return;
+        final data = Map<String, dynamic>.from(decoded);
         if (!mounted) return;
         setState(() {
-          _playlist = (data['playlist'] as List?)
-                  ?.map((e) => TrackItem.fromJson(e))
-                  .toList() ??
-              [];
-          _likedSongs = (data['likedSongs'] as List?)
-                  ?.map((e) => TrackItem.fromJson(e))
-                  .toList() ??
-              [];
-          _downloads = (data['downloads'] as List?)
-                  ?.map((e) => TrackItem.fromJson(e))
-                  .toList() ??
-              [];
-          _recents = (data['recents'] as List?)
-                  ?.map((e) => TrackItem.fromJson(e))
-                  .toList() ??
-              [];
+          _playlist = _parseTrackList(data['playlist']);
+          _likedSongs = _parseTrackList(data['likedSongs']);
+          _downloads = _parseTrackList(data['downloads']);
+          _recents = _parseTrackList(data['recents']);
           _followedArtists =
               Set<String>.from(data['followedArtists'] ?? const []);
           _hiddenTrackIds =
               Set<String>.from(data['hiddenTrackIds'] ?? const []);
           _excludedTrackIds =
               Set<String>.from(data['excludedTrackIds'] ?? const []);
-          if (data['settings'] != null) {
-            widget.onSettingsChanged(AppSettings.fromJson(data['settings']));
+          if (data['settings'] is Map) {
+            widget.onSettingsChanged(AppSettings.fromJson(
+                Map<String, dynamic>.from(data['settings'] as Map)));
           }
-          if (data['profile'] != null) {
-            _profile = UserProfileData.fromJson(data['profile']);
+          if (data['profile'] is Map) {
+            _profile = UserProfileData.fromJson(
+                Map<String, dynamic>.from(data['profile'] as Map));
           }
           _coins = (data['coins'] as num?)?.toInt() ?? 50;
           _totalExp = (data['totalExp'] as num?)?.toInt() ?? 0;
@@ -1302,8 +1315,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
 
   void _openSearchScreen() {
     final searchController = TextEditingController();
-    List<TrackItem> searchResults = [];
-    List<CircleItem> artistResults = [];
+    var searchResults = <TrackItem>[];
+    var artistResults = <CircleItem>[];
 
     showGeneralDialog(
       context: context,
@@ -1561,9 +1574,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: const [
+                    children: [
                       Text('60Hz', style: TextStyle(color: Colors.white60)),
                       Text('230Hz', style: TextStyle(color: Colors.white60)),
                       Text('910Hz', style: TextStyle(color: Colors.white60)),
@@ -1576,21 +1589,25 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: List.generate(
                       5,
-                      (i) => SizedBox(
-                        height: 100,
-                        child: RotatedBox(
-                          quarterTurns: 3,
-                          child: Slider(
-                            value: (3.0 + (i * 1.5)).clamp(-15.0, 15.0),
-                            min: -15.0,
-                            max: 15.0,
-                            activeColor: Colors.amber,
-                            onChanged: widget.settings.equalizerEnabled
-                                ? (_) {}
-                                : null,
+                      (i) {
+                        final double bandVal =
+                            (3.0 + (i * 1.5)).clamp(-15.0, 15.0).toDouble();
+                        return SizedBox(
+                          height: 100,
+                          child: RotatedBox(
+                            quarterTurns: 3,
+                            child: Slider(
+                              value: bandVal,
+                              min: -15.0,
+                              max: 15.0,
+                              activeColor: Colors.amber,
+                              onChanged: widget.settings.equalizerEnabled
+                                  ? (_) {}
+                                  : null,
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                   const Spacer(),
@@ -2840,10 +2857,11 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  Widget _buildTrackListSection(List<TrackItem> tracks, String emptyMsg,
-      Function(TrackItem) onRemove) {
+  Widget _buildTrackListSection(
+      var tracks, String emptyMsg, Function(TrackItem) onRemove) {
+    final List<TrackItem> trackList = List<TrackItem>.from(tracks);
     final isLight = widget.settings.themeMode == 'Light';
-    if (tracks.isEmpty) {
+    if (trackList.isEmpty) {
       return Center(
           child: Padding(
               padding: const EdgeInsets.all(24),
@@ -2853,9 +2871,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 110, top: 8),
-      itemCount: tracks.length,
+      itemCount: trackList.length,
       itemBuilder: (context, index) {
-        final track = tracks[index];
+        final track = trackList[index];
         return ListTile(
           leading: Container(
             width: 48,
@@ -2875,7 +2893,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             onPressed: () => onRemove(track),
           ),
-          onTap: () => _playTrack(track, queue: tracks, openModal: true),
+          onTap: () => _playTrack(track, queue: trackList, openModal: true),
         );
       },
     );
@@ -2897,7 +2915,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       _lastDailyClaimDateStr = today;
       if (day < 7) {
         final int rewardCoins = (day * 10).toInt();
-        _coins += rewardCoins;
+        _coins = (_coins + rewardCoins).toInt();
         _dailyRewardDayIndex += 1;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2907,7 +2925,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       color: Colors.black, fontWeight: FontWeight.bold))),
         );
       } else {
-        _coins += 200;
+        _coins = (_coins + 200).toInt();
         _streakSaverTokens += 1;
         _doubleExpEndTime = DateTime.now().add(const Duration(hours: 24));
         _dailyRewardDayIndex = 1;
@@ -2930,10 +2948,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
             Text('Day 7 Mystery Box!'),
           ],
         ),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
+          children: [
             Text('You unlocked grand rewards:',
                 style: TextStyle(color: Colors.white70)),
             SizedBox(height: 12),
@@ -3456,6 +3474,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   itemBuilder: (context, idx) {
                     final av = _avatarCatalog[idx];
                     final isSelected = _profile.selectedAvatarIndex == idx;
+                    final int bgColor = (av['bg'] as num).toInt();
                     return GestureDetector(
                       onTap: () {
                         setState(() => _profile.selectedAvatarIndex = idx);
@@ -3477,7 +3496,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             ),
                             child: CircleAvatar(
                               radius: 26,
-                              backgroundColor: Color(av['bg'] as int),
+                              backgroundColor: Color(bgColor),
                               child: Icon(av['icon'] as IconData,
                                   color: Colors.white, size: 26),
                             ),
@@ -3701,6 +3720,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     final frame = _currentFrame;
     final badge = _currentBadge;
     final avatarData = _profile.selectedAvatarIndex != null &&
+            _profile.selectedAvatarIndex! >= 0 &&
             _profile.selectedAvatarIndex! < _avatarCatalog.length
         ? _avatarCatalog[_profile.selectedAvatarIndex!]
         : null;
@@ -3747,7 +3767,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       child: CircleAvatar(
                         radius: 52,
                         backgroundColor: avatarData != null
-                            ? Color(avatarData['bg'] as int)
+                            ? Color((avatarData['bg'] as num).toInt())
                             : const Color(0xFF5B9BD5),
                         child: avatarData != null
                             ? Icon(avatarData['icon'] as IconData,
