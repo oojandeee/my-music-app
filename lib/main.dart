@@ -3118,8 +3118,8 @@ class _MainTabScreenState extends State<MainTabScreen>
     );
   }
 
-  Widget _buildTrackListSection(
-      List<TrackItem> trackList, String emptyMsg, Function(TrackItem) onRemove) {
+  Widget _buildTrackListSection(List<TrackItem> trackList, String emptyMsg,
+      void Function(TrackItem) onRemove) {
     final isLight = widget.settings.themeMode == 'Light';
     if (trackList.isEmpty) {
       return Center(
