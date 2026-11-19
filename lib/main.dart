@@ -150,7 +150,6 @@ class UserProfileData {
   String birthday;
   String city;
   String address;
-  int? selectedAvatarIndex;
   bool isCreated;
 
   UserProfileData({
@@ -159,7 +158,6 @@ class UserProfileData {
     this.birthday = '',
     this.city = '',
     this.address = '',
-    this.selectedAvatarIndex,
     this.isCreated = false,
   });
 
@@ -181,7 +179,6 @@ class UserProfileData {
         'birthday': birthday,
         'city': city,
         'address': address,
-        'selectedAvatarIndex': selectedAvatarIndex,
         'isCreated': isCreated,
       };
 
@@ -192,7 +189,6 @@ class UserProfileData {
         birthday: (json['birthday'] ?? json['email'] ?? '').toString(),
         city: (json['city'] ?? '').toString(),
         address: (json['address'] ?? '').toString(),
-        selectedAvatarIndex: (json['selectedAvatarIndex'] as num?)?.toInt(),
         isCreated: json['isCreated'] == true,
       );
 }
@@ -448,25 +444,6 @@ class _MainTabScreenState extends State<MainTabScreen>
     0xFF777777,
     0xFF477D95,
     0xFFAF2896,
-  ];
-
-  static const List> _avatarCatalog = [
-    {'icon': Icons.pets, 'bg': 0xFF7C4A21, 'accent': 0xFFFBBF24},
-    {'icon': Icons.shield_moon, 'bg': 0xFF7F1D1D, 'accent': 0xFFF59E0B},
-    {'icon': Icons.sentiment_satisfied_alt, 'bg': 0xFF2563EB, 'accent': 0xFFA855F7},
-    {'icon': Icons.cruelty_free, 'bg': 0xFF1F2937, 'accent': 0xFFF3F4F6},
-    {'icon': Icons.face_3, 'bg': 0xFF581C87, 'accent': 0xFFF472B6},
-    {'icon': Icons.sports_martial_arts, 'bg': 0xFF312E81, 'accent': 0xFF38BDF8},
-    {'icon': Icons.bug_report, 'bg': 0xFF991B1B, 'accent': 0xFFEF4444},
-    {'icon': Icons.rocket_launch, 'bg': 0xFF1E3A8A, 'accent': 0xFF4ADE80},
-    {'icon': Icons.accessibility_new, 'bg': 0xFF334155, 'accent': 0xFFE2E8F0},
-    {'icon': Icons.headphones, 'bg': 0xFF064E3B, 'accent': 0xFF1DB954},
-    {'icon': Icons.graphic_eq, 'bg': 0xFF0F172A, 'accent': 0xFF00F5D4},
-    {'icon': Icons.local_fire_department, 'bg': 0xFF7C2D12, 'accent': 0xFFFB923C},
-    {'icon': Icons.workspace_premium, 'bg': 0xFF4C1D95, 'accent': 0xFFFACC15},
-    {'icon': Icons.nightlight_round, 'bg': 0xFF172554, 'accent': 0xFF93C5FD},
-    {'icon': Icons.electric_bolt, 'bg': 0xFF713F12, 'accent': 0xFFFDE047},
-    {'icon': Icons.auto_awesome, 'bg': 0xFF831843, 'accent': 0xFFF472B6},
   ];
 
   static const List<ShopCosmeticItem> _shopItems = [
@@ -3685,85 +3662,6 @@ class _MainTabScreenState extends State<MainTabScreen>
       (i) => i.id == _equippedFrameId,
       orElse: () => _shopItems[5]);
 
-  void _openAvatarPickerSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF181818),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          height: 410,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Choose Avatar',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  TextButton(
-                    onPressed: () {
-                      setState(() => _profile.selectedAvatarIndex = null);
-                      _savePersistentState();
-                      Navigator.pop(ctx);
-                    },
-                    child: const Text('Initial',
-                        style: TextStyle(color: Color(0xFF1DB954))),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: GridView.builder(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 14,
-                    crossAxisSpacing: 14,
-                  ),
-                  itemCount: _avatarCatalog.length,
-                  itemBuilder: (context, idx) {
-                    final av = _avatarCatalog[idx];
-                    final isSelected = _profile.selectedAvatarIndex == idx;
-                    final int bgColor = (av['bg'] as num).toInt();
-                    final int accentColor = (av['accent'] as num).toInt();
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() => _profile.selectedAvatarIndex = idx);
-                        _savePersistentState();
-                        Navigator.pop(ctx);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: isSelected
-                                ? const Color(0xFF1DB954)
-                                : Colors.white24,
-                            width: isSelected ? 3 : 1.5,
-                          ),
-                        ),
-                        child: CircleAvatar(
-                          radius: 28,
-                          backgroundColor: Color(bgColor),
-                          child: Icon(av['icon'] as IconData,
-                              color: Color(accentColor), size: 30),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   void _openCreateOrEditProfileForm() {
     final firstCtrl = TextEditingController(text: _profile.firstName);
     final lastCtrl = TextEditingController(text: _profile.lastName);
@@ -3979,12 +3877,6 @@ class _MainTabScreenState extends State<MainTabScreen>
             ? 20
             : 10;
 
-    final avatarData = _profile.selectedAvatarIndex != null &&
-            _profile.selectedAvatarIndex! >= 0 &&
-            _profile.selectedAvatarIndex! < _avatarCatalog.length
-        ? _avatarCatalog[_profile.selectedAvatarIndex!]
-        : null;
-
     final int remainingExp =
         (_expNeededForNextLevel - _expIntoCurrentLevel).toInt();
 
@@ -4036,22 +3928,14 @@ class _MainTabScreenState extends State<MainTabScreen>
                 ),
                 CircleAvatar(
                   radius: 66,
-                  backgroundColor: avatarData != null
-                      ? Color((avatarData['bg'] as num).toInt())
-                      : const Color(0xFF5B9BD5),
-                  child: avatarData != null
-                      ? Icon(
-                          avatarData['icon'] as IconData,
-                          size: 66,
-                          color: Color((avatarData['accent'] as num).toInt()),
-                        )
-                      : Text(
-                          _profile.initialLetter,
-                          style: const TextStyle(
-                              fontSize: 52,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black),
-                        ),
+                  backgroundColor: const Color(0xFF5B9BD5),
+                  child: Text(
+                    _profile.initialLetter,
+                    style: const TextStyle(
+                        fontSize: 52,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black),
+                  ),
                 ),
                 Positioned(
                   bottom: 18,
@@ -4089,71 +3973,31 @@ class _MainTabScreenState extends State<MainTabScreen>
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF202020),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: const Color(0xFF1DB954).withOpacity(0.55)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Lv.$_currentLevel',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF1DB954),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$remainingExp EXP to Lv.${_currentLevel + 1}',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.white60),
-                      ),
-                    ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF202020),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF1DB954).withOpacity(0.55)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Lv.$_currentLevel',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF1DB954),
                   ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onTap: _openAvatarPickerSheet,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF202020),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.face_retouching_natural,
-                            color: Color(0xFF1DB954), size: 22),
-                        SizedBox(width: 8),
-                        Text(
-                          'Edit Avatar',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                const SizedBox(height: 2),
+                Text(
+                  '$remainingExp EXP to Lv.${_currentLevel + 1}',
+                  style: const TextStyle(fontSize: 11, color: Colors.white60),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 18),
           SizedBox(
