@@ -1,13 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+final FlutterLocalNotificationsPlugin _notifsPlugin =
+    FlutterLocalNotificationsPlugin();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await _notifsPlugin.initialize(
+    const InitializationSettings(android: androidInit),
+  );
   runApp(const MyApp());
 }
 
@@ -63,6 +72,7 @@ class BoxModel {
   final String subtitle;
   final String description;
   final int colorValue;
+  final bool useGreenMusicLogo;
   final List<TrackItem> tracks;
 
   BoxModel({
@@ -71,6 +81,7 @@ class BoxModel {
     this.subtitle = 'Playlist',
     this.description = 'The latest & grandest tracks curated for your vibe.',
     required this.colorValue,
+    this.useGreenMusicLogo = false,
     List<TrackItem>? tracks,
   }) : tracks = tracks ?? [];
 }
@@ -136,8 +147,7 @@ class HomeSection {
 class UserProfileData {
   String firstName;
   String lastName;
-  String email;
-  String phone;
+  String birthday;
   String city;
   String address;
   int? selectedAvatarIndex;
@@ -146,8 +156,7 @@ class UserProfileData {
   UserProfileData({
     this.firstName = '',
     this.lastName = '',
-    this.email = '',
-    this.phone = '',
+    this.birthday = '',
     this.city = '',
     this.address = '',
     this.selectedAvatarIndex,
@@ -169,8 +178,7 @@ class UserProfileData {
   Map<String, dynamic> toJson() => {
         'firstName': firstName,
         'lastName': lastName,
-        'email': email,
-        'phone': phone,
+        'birthday': birthday,
         'city': city,
         'address': address,
         'selectedAvatarIndex': selectedAvatarIndex,
@@ -181,8 +189,7 @@ class UserProfileData {
       UserProfileData(
         firstName: json['firstName'] ?? '',
         lastName: json['lastName'] ?? '',
-        email: json['email'] ?? '',
-        phone: json['phone'] ?? '',
+        birthday: json['birthday'] ?? json['email'] ?? '',
         city: json['city'] ?? '',
         address: json['address'] ?? '',
         selectedAvatarIndex: (json['selectedAvatarIndex'] as num?)?.toInt(),
@@ -198,8 +205,9 @@ class AppSettings {
   bool pushNotifications;
   String streamingQuality;
   String downloadQuality;
-  String themeMode;
+  String themeMode; // 'Dark', 'Light', 'Neon', 'Midnight'
   bool equalizerEnabled;
+  double volumeBoost; // 0.2 to 2.0 (1.0 = 100%, 2.0 = 200% boost)
 
   AppSettings({
     this.privateSession = false,
@@ -211,6 +219,7 @@ class AppSettings {
     this.downloadQuality = 'Very High',
     this.themeMode = 'Dark',
     this.equalizerEnabled = true,
+    this.volumeBoost = 1.25,
   });
 
   Map<String, dynamic> toJson() => {
@@ -223,6 +232,7 @@ class AppSettings {
         'downloadQuality': downloadQuality,
         'themeMode': themeMode,
         'equalizerEnabled': equalizerEnabled,
+        'volumeBoost': volumeBoost,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
@@ -235,6 +245,7 @@ class AppSettings {
         downloadQuality: json['downloadQuality'] ?? 'Very High',
         themeMode: json['themeMode'] ?? 'Dark',
         equalizerEnabled: json['equalizerEnabled'] ?? true,
+        volumeBoost: (json['volumeBoost'] as num?)?.toDouble() ?? 1.25,
       );
 }
 
@@ -309,19 +320,36 @@ class MainAppRootState extends State<MainAppRoot> {
 
   @override
   Widget build(BuildContext context) {
-    final isLight = _settings.themeMode == 'Light';
+    final mode = _settings.themeMode;
+    final isLight = mode == 'Light';
+    final isNeon = mode == 'Neon';
+    final isMidnight = mode == 'Midnight';
+
+    final bgColor = isLight
+        ? Colors.white
+        : isNeon
+            ? const Color(0xFF070514)
+            : isMidnight
+                ? const Color(0xFF000000)
+                : const Color(0xFF121212);
+
+    final primaryAccent =
+        isNeon ? const Color(0xFF00F5D4) : const Color(0xFF1DB954);
+
     return MaterialApp(
       title: 'Music Stream',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: isLight ? Brightness.light : Brightness.dark,
-        scaffoldBackgroundColor:
-            isLight ? Colors.white : const Color(0xFF121212),
+        scaffoldBackgroundColor: bgColor,
         colorScheme: isLight
             ? ColorScheme.light(
-                primary: const Color(0xFF1DB954), surface: Colors.grey[100]!)
-            : const ColorScheme.dark(
-                primary: Color(0xFF1DB954), surface: Color(0xFF181818)),
+                primary: primaryAccent, surface: Colors.grey[100]!)
+            : ColorScheme.dark(
+                primary: primaryAccent,
+                secondary: isNeon ? const Color(0xFFFF007F) : primaryAccent,
+                surface: isNeon ? const Color(0xFF130D2E) : const Color(0xFF181818),
+              ),
       ),
       home:
           MainTabScreen(settings: _settings, onSettingsChanged: updateSettings),
@@ -344,11 +372,13 @@ class MainTabScreen extends StatefulWidget {
   State<MainTabScreen> createState() => _MainTabScreenState();
 }
 
-class _MainTabScreenState extends State<MainTabScreen> {
+class _MainTabScreenState extends State<MainTabScreen>
+    with SingleTickerProviderStateMixin {
   int _currentTabIndex = 0;
   String _selectedCategoryFilter = 'All';
   final AudioPlayer _audioPlayer = AudioPlayer();
   Timer? _listeningTrackerTimer;
+  late final AnimationController _beatAnimController;
 
   List<TrackItem> _playlist = [];
   List<TrackItem> _likedSongs = [];
@@ -389,6 +419,22 @@ class _MainTabScreenState extends State<MainTabScreen> {
   late final List<HomeSection> _homeSections;
 
   static const String _bundledAssetPath = 'sample_track_1.mp3';
+  static const String _taylorSwiftAssetPath = 'taylor_swift.mp3';
+
+  static const List<String> _sampleLyricsLines = [
+    'Lights go low in the midnight air',
+    'Every heartbeat echoes everywhere',
+    'Turn the volume up till the walls can feel',
+    'Chasing every moment that is real',
+    'Hands up high in the neon glow',
+    'Nowhere else that we rather go',
+    'Every single note pulls us right back in',
+    'Let the rhythm roll, let the night begin',
+    'Shadow and light on the dancefloor line',
+    'Your voice and the bass keep the signal fine',
+    'No more waiting on a quiet screen',
+    'Loudest story that we’ve ever seen',
+  ];
 
   final List<int> _palette = const [
     0xFF1E3264,
@@ -403,17 +449,24 @@ class _MainTabScreenState extends State<MainTabScreen> {
     0xFFAF2896,
   ];
 
-  static const _avatarCatalog = [
-    {'name': 'Beat King', 'icon': Icons.headphones, 'bg': 0xFF1DB954},
-    {'name': 'Star Boy', 'icon': Icons.star_rounded, 'bg': 0xFFE8115B},
-    {'name': 'Cyber DJ', 'icon': Icons.graphic_eq, 'bg': 0xFF0D73EC},
-    {'name': 'Fire Soul', 'icon': Icons.local_fire_department, 'bg': 0xFFBA5D07},
-    {'name': 'Royal Crown', 'icon': Icons.workspace_premium, 'bg': 0xFF8D67AB},
-    {'name': 'Night Owl', 'icon': Icons.nightlight_round, 'bg': 0xFF1E3264},
-    {'name': 'Rockstar', 'icon': Icons.electric_bolt, 'bg': 0xFFD97706},
-    {'name': 'Melody', 'icon': Icons.music_note, 'bg': 0xFFAF2896},
-    {'name': 'Vibe Master', 'icon': Icons.album, 'bg': 0xFF148A08},
-    {'name': 'Galaxy', 'icon': Icons.auto_awesome, 'bg': 0xFF477D95},
+  // Rich avatar catalog inspired by the profile screenshots + custom avatars (no text labels)
+  static const List> _avatarCatalog = [
+    {'icon': Icons.pets, 'bg': 0xFF7C4A21, 'accent': 0xFFFBBF24}, // Cub / Lion style
+    {'icon': Icons.shield_moon, 'bg': 0xFF7F1D1D, 'accent': 0xFFF59E0B}, // Armor hero style
+    {'icon': Icons.sentiment_satisfied_alt, 'bg': 0xFF2563EB, 'accent': 0xFFA855F7}, // Smiley gradient style
+    {'icon': Icons.cruelty_free, 'bg': 0xFF1F2937, 'accent': 0xFFF3F4F6}, // Panda style
+    {'icon': Icons.face_3, 'bg': 0xFF581C87, 'accent': 0xFFF472B6}, // Character portrait
+    {'icon': Icons.sports_martial_arts, 'bg': 0xFF312E81, 'accent': 0xFF38BDF8}, // Masked warrior
+    {'icon': Icons.bug_report, 'bg': 0xFF991B1B, 'accent': 0xFFEF4444}, // Red / spider style
+    {'icon': Icons.rocket_launch, 'bg': 0xFF1E3A8A, 'accent': 0xFF4ADE80}, // Space ranger style
+    {'icon': Icons.accessibility_new, 'bg': 0xFF334155, 'accent': 0xFFE2E8F0}, // Bot / character
+    {'icon': Icons.headphones, 'bg': 0xFF064E3B, 'accent': 0xFF1DB954},
+    {'icon': Icons.graphic_eq, 'bg': 0xFF0F172A, 'accent': 0xFF00F5D4},
+    {'icon': Icons.local_fire_department, 'bg': 0xFF7C2D12, 'accent': 0xFFFB923C},
+    {'icon': Icons.workspace_premium, 'bg': 0xFF4C1D95, 'accent': 0xFFFACC15},
+    {'icon': Icons.nightlight_round, 'bg': 0xFF172554, 'accent': 0xFF93C5FD},
+    {'icon': Icons.electric_bolt, 'bg': 0xFF713F12, 'accent': 0xFFFDE047},
+    {'icon': Icons.auto_awesome, 'bg': 0xFF831843, 'accent': 0xFFF472B6},
   ];
 
   static const List<ShopCosmeticItem> _shopItems = [
@@ -475,7 +528,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       cost: 30,
       primaryColor: Color(0xFF8D5524),
       secondaryColor: Color(0xFF5C3818),
-      icon: Icons.crop_square,
+      icon: Icons.filter_vintage,
     ),
     ShopCosmeticItem(
       id: 'frame_iron',
@@ -485,7 +538,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       cost: 80,
       primaryColor: Color(0xFF9CA3AF),
       secondaryColor: Color(0xFF4B5563),
-      icon: Icons.radio_button_unchecked,
+      icon: Icons.filter_vintage,
     ),
     ShopCosmeticItem(
       id: 'frame_silver',
@@ -495,7 +548,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       cost: 180,
       primaryColor: Color(0xFFF3F4F6),
       secondaryColor: Color(0xFF9CA3AF),
-      icon: Icons.brightness_low,
+      icon: Icons.filter_vintage,
     ),
     ShopCosmeticItem(
       id: 'frame_flowers',
@@ -513,9 +566,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
       tier: 'Gold',
       type: 'frame',
       cost: 450,
-      primaryColor: Color(0xFFFBBF24),
+      primaryColor: Color(0xFFFFD700),
       secondaryColor: Color(0xFFD97706),
-      icon: Icons.stars,
+      icon: Icons.auto_awesome,
     ),
     ShopCosmeticItem(
       id: 'frame_diamond',
@@ -523,9 +576,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
       tier: 'Diamond',
       type: 'frame',
       cost: 1000,
-      primaryColor: Color(0xFF38BDF8),
+      primaryColor: Color(0xFF67E8F9),
       secondaryColor: Color(0xFF818CF8),
-      icon: Icons.auto_awesome,
+      icon: Icons.diamond,
     ),
   ];
 
@@ -616,10 +669,23 @@ class _MainTabScreenState extends State<MainTabScreen> {
   @override
   void initState() {
     super.initState();
+    _beatAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
     _buildCatalogData();
     _loadPersistentState();
     _initAudioListeners();
+    _applyVolumeBoost();
     _startSecondBySecondExpAndUsageTracker();
+  }
+
+  void _applyVolumeBoost() {
+    final effectiveVol = widget.settings.equalizerEnabled
+        ? widget.settings.volumeBoost.clamp(0.0, 2.0)
+        : 1.0;
+    // just_audio setVolume accepts 0.0..1.0+; on Android/platforms supporting >1.0 we pass clamped safe value
+    _audioPlayer.setVolume(effectiveVol.clamp(0.0, 1.0));
   }
 
   bool get _isDoubleExpActive =>
@@ -746,8 +812,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
     _savePersistentState();
   }
 
-  List<TrackItem> _generateSampleTracks(String prefix, String artistName) {
+  List<TrackItem> _generateSampleTracks(String prefix, String artistName,
+      {bool includeTaylorSecond = false}) {
     return List.generate(6, (i) {
+      if (includeTaylorSecond && i == 1) {
+        return TrackItem(
+          id: '${prefix}_taylor_swift_2',
+          title: 'Taylor Swift',
+          artist: 'Taylor Swift',
+          assetPath: _taylorSwiftAssetPath,
+          playsCount: '98,410,120',
+        );
+      }
       final int playNum = (71 - i * 4).clamp(1, 99).toInt();
       return TrackItem(
         id: '${prefix}_track_$i',
@@ -777,9 +853,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
         name: shortcutNames[i],
         subtitle: i == 0 ? 'Tap to Search' : 'Curated Mix',
         description: 'Quick access to ${shortcutNames[i]} and top tracks.',
-        colorValue: _palette[i % _palette.length],
+        colorValue: i % 2 == 1 ? 0xFF000000 : _palette[i % _palette.length],
+        useGreenMusicLogo: i % 2 == 1,
         tracks: _generateSampleTracks(
-            shortcutNames[i], i == 0 ? 'Karol G' : 'Iqbal'),
+          shortcutNames[i],
+          i == 0 ? 'Karol G' : 'Iqbal',
+          includeTaylorSecond: i == 1,
+        ),
       );
     });
 
@@ -812,13 +892,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
       for (int l = 0; l < 4; l++) {
         final lineTitle = lineTitles[boxLineCounter % lineTitles.length];
         final int currentLineIdx = boxLineCounter;
+        final bool isFirstBoxInFirstLine = cycle == 0 && l == 0;
         _homeSections.add(
           HomeSection(
             id: 'box_line_${cycle}_$l',
             type: HomeSectionType.boxLine,
             title: lineTitle,
             boxes: List.generate(10, (b) {
-              final boxName = b == 0 && cycle == 0 && l == 0
+              final boxName = isFirstBoxInFirstLine && b == 0
                   ? 'Karol G Hits'
                   : '$lineTitle #${b + 1}';
               final int artistIdx =
@@ -826,13 +907,19 @@ class _MainTabScreenState extends State<MainTabScreen> {
               final artist = artistNames[artistIdx];
               final int colorIdx =
                   ((currentLineIdx + b) % _palette.length).toInt();
+              final bool greenLogo = (b + currentLineIdx) % 3 == 1;
               return BoxModel(
                 id: 'box_${cycle}_${l}_$b',
                 name: boxName,
                 subtitle: b % 2 == 0 ? 'Album • $artist' : 'Playlist',
                 description: 'The latest & grandest hits. Cover: $artist',
-                colorValue: _palette[colorIdx],
-                tracks: _generateSampleTracks(boxName, artist),
+                colorValue: greenLogo ? 0xFF000000 : _palette[colorIdx],
+                useGreenMusicLogo: greenLogo,
+                tracks: _generateSampleTracks(
+                  boxName,
+                  artist,
+                  includeTaylorSecond: isFirstBoxInFirstLine && b == 0,
+                ),
               );
             }),
           ),
@@ -892,9 +979,61 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
   }
 
+  Future<void> _showNowPlayingNotification(TrackItem track, bool playing) async {
+    if (!widget.settings.pushNotifications) return;
+    try {
+      final isLiked = _isLiked(track);
+      final posSec = _position.inSeconds;
+      final durSec = _duration.inSeconds > 0 ? _duration.inSeconds : 180;
+      final androidDetails = AndroidNotificationDetails(
+        'music_playback_channel',
+        'Now Playing Controls',
+        channelDescription: 'Playback controls for currently playing song',
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: playing,
+        autoCancel: false,
+        showProgress: true,
+        maxProgress: durSec,
+        progress: posSec.clamp(0, durSec),
+        subText:
+            '${_formatDuration(_position)} / ${_formatDuration(_duration)} • ${isLiked ? "Liked ♥" : "Tap to open"}',
+        actions: <AndroidNotificationAction>[
+          const AndroidNotificationAction('prev_track', 'Prev',
+              showsUserInterface: true),
+          AndroidNotificationAction(
+            playing ? 'pause_track' : 'play_track',
+            playing ? 'Stop / Pause' : 'Start / Play',
+            showsUserInterface: true,
+          ),
+          const AndroidNotificationAction('next_track', 'Next',
+              showsUserInterface: true),
+          AndroidNotificationAction(
+            'like_track',
+            isLiked ? 'Unlike' : 'Like ♥',
+            showsUserInterface: true,
+          ),
+        ],
+      );
+
+      await _notifsPlugin.show(
+        1001,
+        track.title,
+        '${track.artist}  •  [${_formatDuration(_position)} ——●—— ${_formatDuration(_duration)}]',
+        NotificationDetails(android: androidDetails),
+      );
+    } catch (_) {}
+  }
+
+  String _formatDuration(Duration d) {
+    final mins = d.inMinutes;
+    final secs = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
+  }
+
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v8.json');
+    return File('${dir.path}/music_app_persistent_v9.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -997,28 +1136,39 @@ class _MainTabScreenState extends State<MainTabScreen> {
           _equippedBadgeId = data['equippedBadgeId'] ?? 'badge_wood';
           _equippedFrameId = data['equippedFrameId'] ?? 'frame_wood';
         });
+        _applyVolumeBoost();
       }
     } catch (_) {}
   }
 
   void _initAudioListeners() {
     _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) setState(() => _isPlaying = state.playing);
+      if (mounted) {
+        setState(() => _isPlaying = state.playing);
+      }
+      if (_currentPlayingTrack != null) {
+        _showNowPlayingNotification(_currentPlayingTrack!, state.playing);
+      }
       if (state.processingState == ProcessingState.completed &&
           widget.settings.autoplay) {
         _playNextInQueue();
       }
     });
     _audioPlayer.positionStream.listen((pos) {
-      if (mounted) setState(() => _position = pos);
+      if (mounted) {
+        setState(() => _position = pos);
+      }
     });
     _audioPlayer.durationStream.listen((dur) {
-      if (mounted && dur != null) setState(() => _duration = dur);
+      if (mounted && dur != null) {
+        setState(() => _duration = dur);
+      }
     });
   }
 
   @override
   void dispose() {
+    _beatAnimController.dispose();
     _listeningTrackerTimer?.cancel();
     _audioPlayer.dispose();
     super.dispose();
@@ -1035,8 +1185,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
     try {
       await _audioPlayer.stop();
+      _applyVolumeBoost();
       setState(() {
         _currentPlayingTrack = track;
+        _position = Duration.zero;
         _currentTrackSecondsListened = 0;
         _lastAwardedMinuteBlock = 0;
         _totalSongsListened += 1;
@@ -1051,8 +1203,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
       });
       _savePersistentState();
 
-      await _audioPlayer.setAsset(track.assetPath);
+      final dur = await _audioPlayer.setAsset(track.assetPath);
+      if (dur != null && mounted) {
+        setState(() => _duration = dur);
+      }
       _audioPlayer.play();
+      _showNowPlayingNotification(track, true);
       if (openModal && mounted) _openFullPlayerModal(track);
     } catch (e) {
       if (mounted) {
@@ -1074,11 +1230,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
     if (_playbackQueue.isNotEmpty) {
       final next = _playbackQueue.removeAt(0);
       _playTrack(next, openModal: false);
+    } else if (_currentPlayingTrack != null) {
+      _audioPlayer.seek(Duration.zero);
+      _audioPlayer.play();
     }
   }
 
   void _playPreviousInQueue() {
-    _audioPlayer.seek(Duration.zero);
+    if (_position.inSeconds > 3) {
+      _audioPlayer.seek(Duration.zero);
+    } else if (_recents.length > 1) {
+      final prev = _recents[1];
+      _playTrack(prev, openModal: false);
+    } else {
+      _audioPlayer.seek(Duration.zero);
+    }
   }
 
   void _toggleLike(TrackItem track) {
@@ -1091,6 +1257,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
       }
     });
     _savePersistentState();
+    if (_currentPlayingTrack != null) {
+      _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
+    }
   }
 
   bool _isLiked(TrackItem track) =>
@@ -1144,6 +1313,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
   }
 
+  Widget _buildGreenMusicLogoTile({double size = 48, double radius = 6}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: const Color(0xFF1DB954).withOpacity(0.45)),
+      ),
+      child: CustomPaint(
+        painter: _GreenMusicLogoPainter(),
+      ),
+    );
+  }
+
   void _openTrack3DotsMenu(TrackItem track, {VoidCallback? onHide}) {
     showModalBottomSheet(
       context: context,
@@ -1157,15 +1341,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1DB954),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.music_note, color: Colors.black),
-                  ),
+                  leading: _buildGreenMusicLogoTile(size: 46, radius: 6),
                   title: Text(track.title,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                       maxLines: 1),
@@ -1252,7 +1428,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         backgroundColor: const Color(0xFF242424),
                         title: Text(track.title),
                         content: Text(
-                            'Artist: ${track.artist}\nPlays: ${track.playsCount}\nSource: Bundled Offline Asset (${track.assetPath})'),
+                            'Artist: ${track.artist}\nPlays: ${track.playsCount}\nAsset: ${track.assetPath}'),
                         actions: [
                           TextButton(
                               onPressed: () => Navigator.pop(dCtx),
@@ -1531,8 +1707,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   void _openEqualizerScreen() {
-    double bassVal = 5.0;
-    double virtualizerVal = 3.0;
+    double boostVal = widget.settings.volumeBoost.clamp(0.2, 2.0);
+    double bassVal = 6.5;
 
     showModalBottomSheet(
       context: context,
@@ -1540,111 +1716,110 @@ class _MainTabScreenState extends State<MainTabScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setEqState) {
+            final boostPercent = (boostVal * 100).round();
             return Container(
               padding: const EdgeInsets.all(20),
-              height: 400,
+              height: 430,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Powerful Equalizer',
+                      const Text('Equalizer & Volume Boost',
                           style: TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold)),
+                              fontSize: 19, fontWeight: FontWeight.bold)),
                       Switch(
                         value: widget.settings.equalizerEnabled,
                         activeColor: const Color(0xFF1DB954),
                         onChanged: (val) {
-                          widget.onSettingsChanged(AppSettings(
-                            privateSession: widget.settings.privateSession,
-                            publicPlaylists: widget.settings.publicPlaylists,
-                            gaplessPlayback: widget.settings.gaplessPlayback,
-                            autoplay: widget.settings.autoplay,
-                            pushNotifications:
-                                widget.settings.pushNotifications,
-                            streamingQuality: widget.settings.streamingQuality,
-                            downloadQuality: widget.settings.downloadQuality,
-                            themeMode: widget.settings.themeMode,
-                            equalizerEnabled: val,
-                          ));
+                          widget.settings.equalizerEnabled = val;
+                          widget.onSettingsChanged(widget.settings);
+                          _applyVolumeBoost();
+                          _savePersistentState();
                           setEqState(() {});
                         },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Text('60Hz', style: TextStyle(color: Colors.white60)),
-                      Text('230Hz', style: TextStyle(color: Colors.white60)),
-                      Text('910Hz', style: TextStyle(color: Colors.white60)),
-                      Text('3.6kHz', style: TextStyle(color: Colors.white60)),
-                      Text('14kHz', style: TextStyle(color: Colors.white60)),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: List.generate(
-                      5,
-                      (i) {
-                        final double bandVal =
-                            (3.0 + (i * 1.5)).clamp(-15.0, 15.0).toDouble();
-                        return SizedBox(
-                          height: 100,
-                          child: RotatedBox(
-                            quarterTurns: 3,
-                            child: Slider(
-                              value: bandVal,
-                              min: -15.0,
-                              max: 15.0,
-                              activeColor: Colors.amber,
-                              onChanged: widget.settings.equalizerEnabled
-                                  ? (_) {}
-                                  : null,
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF282828),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.volume_up, color: Color(0xFF1DB954)),
+                                SizedBox(width: 8),
+                                Text('Volume Boost',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.bold)),
+                              ],
                             ),
-                          ),
-                        );
-                      },
+                            Text(
+                              '$boostPercent%',
+                              style: const TextStyle(
+                                color: Color(0xFF1DB954),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Slider(
+                          value: boostVal,
+                          min: 0.2,
+                          max: 2.0,
+                          divisions: 18,
+                          activeColor: const Color(0xFF1DB954),
+                          onChanged: widget.settings.equalizerEnabled
+                              ? (v) {
+                                  setEqState(() => boostVal = v);
+                                  widget.settings.volumeBoost = v;
+                                  widget.onSettingsChanged(widget.settings);
+                                  _applyVolumeBoost();
+                                  _savePersistentState();
+                                }
+                              : null,
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+                  const Text('Frequency & Bass Punch',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  Slider(
+                    value: bassVal,
+                    min: 0,
+                    max: 10,
+                    activeColor: Colors.amber,
+                    onChanged: widget.settings.equalizerEnabled
+                        ? (v) {
+                            setEqState(() => bassVal = v);
+                            _applyVolumeBoost();
+                          }
+                        : null,
+                  ),
                   const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Column(
-                        children: [
-                          const Text('BASS',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          Slider(
-                            value: bassVal,
-                            min: 0,
-                            max: 10,
-                            activeColor: Colors.amber,
-                            onChanged: widget.settings.equalizerEnabled
-                                ? (v) => setEqState(() => bassVal = v)
-                                : null,
-                          ),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          const Text('VIRTUALIZER',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
-                          Slider(
-                            value: virtualizerVal,
-                            min: 0,
-                            max: 10,
-                            activeColor: Colors.amber,
-                            onChanged: widget.settings.equalizerEnabled
-                                ? (v) => setEqState(() => virtualizerVal = v)
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1DB954)),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Apply Boost',
+                          style: TextStyle(
+                              color: Colors.black, fontWeight: FontWeight.bold)),
+                    ),
                   ),
                 ],
               ),
@@ -1746,8 +1921,36 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     color: isLight ? Colors.black : Colors.white),
               ),
               body: ListView(
-                padding: const EdgeInsets.only(bottom: 80),
+                padding: const EdgeInsets.only(bottom: 90),
                 children: [
+                  if (_profile.isCreated) ...[
+                    Container(
+                      margin: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF202020),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                            color: const Color(0xFF1DB954).withOpacity(0.4)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Saved Profile Details',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Color(0xFF1DB954))),
+                          const Divider(color: Colors.white12),
+                          _profileDetailRow('Full Name',
+                              '${_profile.firstName} ${_profile.lastName}'),
+                          _profileDetailRow('Birthday', _profile.birthday),
+                          _profileDetailRow('City', _profile.city),
+                          _profileDetailRow('Address', _profile.address),
+                        ],
+                      ),
+                    ),
+                  ],
                   ListTile(
                     leading: const Icon(Icons.brightness_6_outlined, size: 28),
                     title: const Text('Theme',
@@ -1759,24 +1962,16 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         backgroundColor: const Color(0xFF1E1E1E),
                         builder: (bCtx) => Column(
                           mainAxisSize: MainAxisSize.min,
-                          children: ['System Theme', 'Light']
+                          children: ['Dark', 'Light', 'Neon', 'Midnight']
                               .map((t) => ListTile(
-                                    title: Text(t),
-                                    trailing: (t == 'System Theme' &&
-                                                widget.settings.themeMode ==
-                                                    'Dark') ||
-                                            (t == 'Light' &&
-                                                widget.settings.themeMode ==
-                                                    'Light')
+                                    title: Text('$t Theme'),
+                                    trailing: widget.settings.themeMode == t
                                         ? const Icon(Icons.check,
                                             color: Color(0xFF1DB954))
                                         : null,
                                     onTap: () {
                                       updateSetting(() {
-                                        widget.settings.themeMode =
-                                            t == 'System Theme'
-                                                ? 'Dark'
-                                                : 'Light';
+                                        widget.settings.themeMode = t;
                                       });
                                       widget.onSettingsChanged(widget.settings);
                                       Navigator.pop(bCtx);
@@ -1789,10 +1984,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
                   ),
                   ListTile(
                     leading: const Icon(Icons.equalizer, size: 28),
-                    title: const Text('Equalizer',
+                    title: const Text('Equalizer & Volume Boost',
                         style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: const Text(
-                        'Powerful frequency adjustment & bass boost'),
+                    subtitle: Text(
+                        'Boost: ${(widget.settings.volumeBoost * 100).round()}%'),
                     onTap: () => _openEqualizerScreen(),
                   ),
                   ListTile(
@@ -1878,17 +2073,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           child: Center(
                             child: Hero(
                               tag: 'box_${box.id}',
-                              child: Container(
-                                width: 160,
-                                height: 160,
-                                decoration: BoxDecoration(
-                                  color: Color(box.colorValue),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Center(
-                                    child: Icon(Icons.album,
-                                        size: 70, color: Colors.white)),
-                              ),
+                              child: box.useGreenMusicLogo
+                                  ? _buildGreenMusicLogoTile(
+                                      size: 160, radius: 14)
+                                  : Container(
+                                      width: 160,
+                                      height: 160,
+                                      decoration: BoxDecoration(
+                                        color: Color(box.colorValue),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Center(
+                                          child: Icon(Icons.album,
+                                              size: 70, color: Colors.white)),
+                                    ),
                             ),
                           ),
                         ),
@@ -1969,16 +2167,19 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           final liked = _isLiked(track);
                           final inPlaylist = _isInPlaylist(track);
                           return ListTile(
-                            leading: Container(
-                              width: 46,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color: Color(box.colorValue).withOpacity(0.8),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Icon(Icons.music_note,
-                                  color: Colors.white),
-                            ),
+                            leading: box.useGreenMusicLogo
+                                ? _buildGreenMusicLogoTile(size: 46, radius: 6)
+                                : Container(
+                                    width: 46,
+                                    height: 46,
+                                    decoration: BoxDecoration(
+                                      color: Color(box.colorValue)
+                                          .withOpacity(0.8),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Icon(Icons.music_note,
+                                        color: Colors.white),
+                                  ),
                             title: Text(track.title,
                                 style: TextStyle(
                                     fontWeight: FontWeight.w600,
@@ -2204,20 +2405,58 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
+  Widget _buildBeatAnimationWidget({double height = 42, int barCount = 12}) {
+    return AnimatedBuilder(
+      animation: _beatAnimController,
+      builder: (context, _) {
+        final t = _beatAnimController.value;
+        return SizedBox(
+          height: height,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: List.generate(barCount, (i) {
+              final phase = (i * 0.45) + (t * math.pi * 2);
+              final factor = _isPlaying
+                  ? (0.25 + 0.75 * ((math.sin(phase) + 1) / 2)).clamp(0.15, 1.0)
+                  : 0.2;
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                width: 4.5,
+                height: height * factor,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1DB954),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
   void _openFullPlayerModal(TrackItem track) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF181818),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final activeTrack = _currentPlayingTrack ?? track;
-            final double maxDur = _duration.inSeconds.toDouble() > 0
-                ? _duration.inSeconds.toDouble()
-                : 1.0;
+        return StreamBuilder<Duration>(
+          stream: _audioPlayer.positionStream,
+          initialData: _position,
+          builder: (context, posSnap) {
+            final livePos = posSnap.data ?? _position;
+            final liveDur = _audioPlayer.duration ??
+                (_duration.inSeconds > 0
+                    ? _duration
+                    : const Duration(seconds: 180));
+            final double maxDur = liveDur.inMilliseconds > 0
+                ? liveDur.inMilliseconds.toDouble()
+                : 180000.0;
             final double curPos =
-                _position.inSeconds.toDouble().clamp(0.0, maxDur);
+                livePos.inMilliseconds.toDouble().clamp(0.0, maxDur);
+            final activeTrack = _currentPlayingTrack ?? track;
             final bool liked = _isLiked(activeTrack);
             final bool inPlaylist = _isInPlaylist(activeTrack);
 
@@ -2233,9 +2472,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         icon: const Icon(Icons.keyboard_arrow_down, size: 30),
                         onPressed: () => Navigator.pop(ctx),
                       ),
-                      const Text('PLAYING FROM OFFLINE ASSET',
-                          style: TextStyle(
-                              fontSize: 11,
+                      Text(activeTrack.artist.toUpperCase(),
+                          style: const TextStyle(
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1)),
                       IconButton(
@@ -2244,7 +2483,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -2252,41 +2491,17 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                       alignment: Alignment.center,
-                      child: Stack(
-                        alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.album,
-                              size: 120, color: Colors.white24),
-                          if (_isPlaying)
-                            Positioned(
-                              bottom: 24,
-                              child: Row(
-                                children: List.generate(
-                                  5,
-                                  (i) {
-                                    final int ms = (200 + i * 80).toInt();
-                                    final double barH =
-                                        (14.0 + (i % 3) * 14).toDouble();
-                                    return AnimatedContainer(
-                                      duration: Duration(milliseconds: ms),
-                                      margin: const EdgeInsets.symmetric(
-                                          horizontal: 3),
-                                      width: 4,
-                                      height: barH,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF1DB954),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
+                          _buildGreenMusicLogoTile(size: 132, radius: 18),
+                          const SizedBox(height: 22),
+                          _buildBeatAnimationWidget(height: 44, barCount: 14),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Row(
                     children: [
                       Expanded(
@@ -2316,7 +2531,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ),
                         onPressed: () {
                           _addToPlaylist(activeTrack);
-                          setModalState(() {});
+                          setState(() {});
                         },
                       ),
                       IconButton(
@@ -2331,40 +2546,39 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ),
                         onPressed: () {
                           _toggleLike(activeTrack);
-                          setModalState(() {});
                           setState(() {});
                         },
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
-                      trackHeight: 6,
+                      trackHeight: 5,
                       thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 8),
+                          const RoundSliderThumbShape(enabledThumbRadius: 7),
                     ),
                     child: Slider(
-                      activeColor: Colors.white,
+                      activeColor: const Color(0xFF1DB954),
                       inactiveColor: Colors.white24,
                       min: 0.0,
                       max: maxDur,
                       value: curPos,
-                      onChanged: (val) {
-                        _audioPlayer.seek(Duration(seconds: val.toInt()));
+                      onChanged: (val) async {
+                        final target = Duration(milliseconds: val.round());
+                        setState(() => _position = target);
+                        await _audioPlayer.seek(target);
                       },
                     ),
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                          '${_position.inMinutes}:${(_position.inSeconds % 60).toString().padLeft(2, '0')}'),
-                      Text(
-                          '${_duration.inMinutes}:${(_duration.inSeconds % 60).toString().padLeft(2, '0')}'),
+                      Text(_formatDuration(livePos)),
+                      Text(_formatDuration(liveDur)),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -2374,25 +2588,55 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           showModalBottomSheet(
                             context: context,
                             backgroundColor: const Color(0xFF1E1E1E),
-                            builder: (lCtx) => Container(
-                              padding: const EdgeInsets.all(20),
-                              height: 300,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Synced Lyrics - ${activeTrack.title}',
-                                      style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                      'They say we’re too young\nTo get ourselves sprung\nOh we didn’t care\nWe made it very clear...',
-                                      style: TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 16,
-                                          height: 1.5)),
-                                ],
-                              ),
+                            builder: (lCtx) => StreamBuilder<Duration>(
+                              stream: _audioPlayer.positionStream,
+                              initialData: _audioPlayer.position,
+                              builder: (context, lSnap) {
+                                final sec = (lSnap.data ?? Duration.zero)
+                                    .inSeconds;
+                                final activeLineIdx =
+                                    (sec ~/ 6) % _sampleLyricsLines.length;
+                                return Container(
+                                  padding: const EdgeInsets.all(20),
+                                  height: 360,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Live Lyrics - ${activeTrack.title}',
+                                          style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 12),
+                                      Expanded(
+                                        child: ListView.builder(
+                                          itemCount: _sampleLyricsLines.length,
+                                          itemBuilder: (context, idx) {
+                                            final isCurrent =
+                                                idx == activeLineIdx;
+                                            return Padding(
+                                              padding: const EdgeInsets.symmetric(
+                                                  vertical: 6),
+                                              child: Text(
+                                                _sampleLyricsLines[idx],
+                                                style: TextStyle(
+                                                  color: isCurrent
+                                                      ? const Color(0xFF1DB954)
+                                                      : Colors.white54,
+                                                  fontSize: isCurrent ? 18 : 15,
+                                                  fontWeight: isCurrent
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                           );
                         },
@@ -2403,20 +2647,26 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             color: Colors.white),
                         onPressed: () => _playPreviousInQueue(),
                       ),
-                      IconButton(
-                        iconSize: 68,
-                        icon: Icon(
-                            _isPlaying
-                                ? Icons.pause_circle_filled
-                                : Icons.play_circle_filled,
-                            color: Colors.white),
-                        onPressed: () {
-                          if (_isPlaying) {
-                            _audioPlayer.pause();
-                          } else {
-                            _audioPlayer.play();
-                          }
-                          setModalState(() {});
+                      StreamBuilder<PlayerState>(
+                        stream: _audioPlayer.playerStateStream,
+                        initialData: _audioPlayer.playerState,
+                        builder: (context, pSnap) {
+                          final playingNow = pSnap.data?.playing ?? _isPlaying;
+                          return IconButton(
+                            iconSize: 68,
+                            icon: Icon(
+                                playingNow
+                                    ? Icons.pause_circle_filled
+                                    : Icons.play_circle_filled,
+                                color: Colors.white),
+                            onPressed: () {
+                              if (playingNow) {
+                                _audioPlayer.pause();
+                              } else {
+                                _audioPlayer.play();
+                              }
+                            },
+                          );
                         },
                       ),
                       IconButton(
@@ -2431,7 +2681,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                 ],
               ),
             );
@@ -2576,15 +2826,19 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     clipBehavior: Clip.antiAlias,
                     child: Row(
                       children: [
-                        Container(
-                          width: 48,
-                          height: double.infinity,
-                          color: Color(shortcut.colorValue),
-                          child: Icon(
-                              index == 0 ? Icons.search : Icons.music_note,
-                              color: Colors.white,
-                              size: 20),
-                        ),
+                        shortcut.useGreenMusicLogo
+                            ? _buildGreenMusicLogoTile(size: 48, radius: 0)
+                            : Container(
+                                width: 48,
+                                height: double.infinity,
+                                color: Color(shortcut.colorValue),
+                                child: Icon(
+                                    index == 0
+                                        ? Icons.search
+                                        : Icons.music_note,
+                                    color: Colors.white,
+                                    size: 20),
+                              ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -2621,7 +2875,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             childCount: filteredSections.length,
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 110)),
+        const SliverToBoxAdapter(child: SizedBox(height: 115)),
       ],
     );
   }
@@ -2656,18 +2910,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     children: [
                       Hero(
                         tag: 'box_${box.id}',
-                        child: Container(
-                          height: 136,
-                          width: 136,
-                          decoration: BoxDecoration(
-                            color: Color(box.colorValue),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.album,
-                                size: 52, color: Colors.white70),
-                          ),
-                        ),
+                        child: box.useGreenMusicLogo
+                            ? _buildGreenMusicLogoTile(size: 136, radius: 8)
+                            : Container(
+                                height: 136,
+                                width: 136,
+                                decoration: BoxDecoration(
+                                  color: Color(box.colorValue),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: Icon(Icons.album,
+                                      size: 52, color: Colors.white70),
+                                ),
+                              ),
                       ),
                       const SizedBox(height: 6),
                       Text(box.name,
@@ -2870,19 +3126,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       color: isLight ? Colors.black54 : Colors.white60))));
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 110, top: 8),
+      padding: const EdgeInsets.only(bottom: 115, top: 8),
       itemCount: trackList.length,
       itemBuilder: (context, index) {
         final track = trackList[index];
         return ListTile(
-          leading: Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-                color: const Color(0xFF282828),
-                borderRadius: BorderRadius.circular(6)),
-            child: const Icon(Icons.music_note, color: Colors.white),
-          ),
+          leading: _buildGreenMusicLogoTile(size: 48, radius: 6),
           title: Text(track.title,
               style: TextStyle(color: isLight ? Colors.black : Colors.white),
               maxLines: 1),
@@ -3097,7 +3346,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         body: TabBarView(
           children: [
             ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 115),
               children: [
                 if (_previousStreakBeforeLoss > 0 && _listeningStreak == 0)
                   Card(
@@ -3234,7 +3483,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ],
             ),
             ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 115),
               itemCount: _longTermMissions.length,
               itemBuilder: (context, idx) {
                 final m = _longTermMissions[idx];
@@ -3335,7 +3584,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               },
             ),
             ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 115),
               itemCount: _shopItems.length,
               itemBuilder: (context, idx) {
                 final item = _shopItems[idx];
@@ -3359,7 +3608,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     subtitle: Text(
                         item.type == 'badge'
                             ? 'Profile Badge'
-                            : 'Avatar Border Frame',
+                            : 'Decorative Avatar Frame',
                         style: const TextStyle(color: Colors.white60)),
                     trailing: ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -3432,7 +3681,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       (i) => i.id == _equippedFrameId,
       orElse: () => _shopItems[5]);
 
-  void _openJioHotstarAvatarPicker() {
+  void _openAvatarPickerSheet() {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF181818),
@@ -3441,14 +3690,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
       builder: (ctx) {
         return Container(
           padding: const EdgeInsets.all(20),
-          height: 380,
+          height: 410,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Choose Your Avatar',
+                  const Text('Choose Avatar',
                       style:
                           TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   TextButton(
@@ -3457,7 +3706,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                       _savePersistentState();
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Use Name Initial',
+                    child: const Text('Initial',
                         style: TextStyle(color: Color(0xFF1DB954))),
                   ),
                 ],
@@ -3467,46 +3716,38 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 child: GridView.builder(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 4,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 14,
+                    crossAxisSpacing: 14,
                   ),
                   itemCount: _avatarCatalog.length,
                   itemBuilder: (context, idx) {
                     final av = _avatarCatalog[idx];
                     final isSelected = _profile.selectedAvatarIndex == idx;
                     final int bgColor = (av['bg'] as num).toInt();
+                    final int accentColor = (av['accent'] as num).toInt();
                     return GestureDetector(
                       onTap: () {
                         setState(() => _profile.selectedAvatarIndex = idx);
                         _savePersistentState();
                         Navigator.pop(ctx);
                       },
-                      child: Column(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? const Color(0xFF1DB954)
-                                    : Colors.transparent,
-                                width: 3,
-                              ),
-                            ),
-                            child: CircleAvatar(
-                              radius: 26,
-                              backgroundColor: Color(bgColor),
-                              child: Icon(av['icon'] as IconData,
-                                  color: Colors.white, size: 26),
-                            ),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF1DB954)
+                                : Colors.white24,
+                            width: isSelected ? 3 : 1.5,
                           ),
-                          const SizedBox(height: 4),
-                          Text(av['name'] as String,
-                              style: const TextStyle(fontSize: 10),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                        ],
+                        ),
+                        child: CircleAvatar(
+                          radius: 28,
+                          backgroundColor: Color(bgColor),
+                          child: Icon(av['icon'] as IconData,
+                              color: Color(accentColor), size: 30),
+                        ),
                       ),
                     );
                   },
@@ -3522,15 +3763,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
   void _openCreateOrEditProfileForm() {
     final firstCtrl = TextEditingController(text: _profile.firstName);
     final lastCtrl = TextEditingController(text: _profile.lastName);
-    final emailCtrl = TextEditingController(text: _profile.email);
-    final phoneCtrl = TextEditingController(text: _profile.phone);
+    final birthdayCtrl = TextEditingController(text: _profile.birthday);
     final cityCtrl = TextEditingController(text: _profile.city);
     final addressCtrl = TextEditingController(text: _profile.address);
 
     bool errFirst = false;
     bool errLast = false;
-    bool errEmail = false;
-    bool errPhone = false;
+    bool errBirthday = false;
     bool errCity = false;
     bool errAddress = false;
 
@@ -3595,15 +3834,27 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ),
                     const SizedBox(height: 12),
                     TextField(
-                      controller: emailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: buildFieldDeco('Email Address *', errEmail),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: phoneCtrl,
-                      keyboardType: TextInputType.phone,
-                      decoration: buildFieldDeco('Phone Number *', errPhone),
+                      controller: birthdayCtrl,
+                      readOnly: true,
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: DateTime(2002, 1, 1),
+                          firstDate: DateTime(1940),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) {
+                          birthdayCtrl.text =
+                              '${picked.day}/${picked.month}/${picked.year}';
+                        }
+                      },
+                      decoration: buildFieldDeco(
+                        'Birthday (DD/MM/YYYY) *',
+                        errBirthday,
+                      ).copyWith(
+                        suffixIcon: const Icon(Icons.cake_outlined,
+                            color: Color(0xFF1DB954)),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -3627,16 +3878,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           setFormState(() {
                             errFirst = firstCtrl.text.trim().isEmpty;
                             errLast = lastCtrl.text.trim().isEmpty;
-                            errEmail = emailCtrl.text.trim().isEmpty;
-                            errPhone = phoneCtrl.text.trim().isEmpty;
+                            errBirthday = birthdayCtrl.text.trim().isEmpty;
                             errCity = cityCtrl.text.trim().isEmpty;
                             errAddress = addressCtrl.text.trim().isEmpty;
                           });
 
                           if (errFirst ||
                               errLast ||
-                              errEmail ||
-                              errPhone ||
+                              errBirthday ||
                               errCity ||
                               errAddress) {
                             return;
@@ -3645,8 +3894,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           setState(() {
                             _profile.firstName = firstCtrl.text.trim();
                             _profile.lastName = lastCtrl.text.trim();
-                            _profile.email = emailCtrl.text.trim();
-                            _profile.phone = phoneCtrl.text.trim();
+                            _profile.birthday = birthdayCtrl.text.trim();
                             _profile.city = cityCtrl.text.trim();
                             _profile.address = addressCtrl.text.trim();
                             _profile.isCreated = true;
@@ -3719,11 +3967,22 @@ class _MainTabScreenState extends State<MainTabScreen> {
     final isLight = widget.settings.themeMode == 'Light';
     final frame = _currentFrame;
     final badge = _currentBadge;
+    final isGoldFrame = frame.tier == 'Gold';
+    final isDiamondFrame = frame.tier == 'Diamond';
+    final double shineBlur = isDiamondFrame
+        ? 26
+        : isGoldFrame
+            ? 20
+            : 10;
+
     final avatarData = _profile.selectedAvatarIndex != null &&
             _profile.selectedAvatarIndex! >= 0 &&
             _profile.selectedAvatarIndex! < _avatarCatalog.length
         ? _avatarCatalog[_profile.selectedAvatarIndex!]
         : null;
+
+    final int remainingExp =
+        (_expNeededForNextLevel - _expIntoCurrentLevel).toInt();
 
     return Scaffold(
       backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
@@ -3742,156 +4001,159 @@ class _MainTabScreenState extends State<MainTabScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 115),
         children: [
           Center(
-            child: Column(
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [frame.primaryColor, frame.secondaryColor],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: frame.primaryColor.withOpacity(0.5),
-                            blurRadius: 12,
-                          ),
-                        ],
+                Container(
+                  width: 212,
+                  height: 212,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: frame.primaryColor
+                            .withOpacity(isDiamondFrame ? 0.75 : 0.45),
+                        blurRadius: shineBlur,
+                        spreadRadius: isDiamondFrame ? 4 : 1,
                       ),
-                      child: CircleAvatar(
-                        radius: 52,
-                        backgroundColor: avatarData != null
-                            ? Color((avatarData['bg'] as num).toInt())
-                            : const Color(0xFF5B9BD5),
-                        child: avatarData != null
-                            ? Icon(avatarData['icon'] as IconData,
-                                size: 52, color: Colors.white)
-                            : Text(
-                                _profile.initialLetter,
-                                style: const TextStyle(
-                                    fontSize: 44,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black),
-                              ),
-                      ),
+                    ],
+                  ),
+                  child: CustomPaint(
+                    painter: _DecorativeFiligreeFramePainter(
+                      primaryColor: frame.primaryColor,
+                      secondaryColor: frame.secondaryColor,
+                      isGold: isGoldFrame,
+                      isDiamond: isDiamondFrame,
                     ),
-                    Positioned(
-                      bottom: 2,
-                      right: 2,
-                      child: GestureDetector(
-                        onTap: _openJioHotstarAvatarPicker,
-                        child: Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: const [
-                              BoxShadow(color: Colors.black38, blurRadius: 4)
-                            ],
-                          ),
-                          child: const Icon(Icons.camera_alt,
-                              size: 18, color: Colors.black),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: -4,
-                      left: -14,
-                      child: GestureDetector(
-                        onLongPress: () {
-                          final int remaining =
-                              (_expNeededForNextLevel - _expIntoCurrentLevel)
-                                  .toInt();
-                          showDialog(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              backgroundColor: const Color(0xFF202020),
-                              title: Text('Level $_currentLevel Progress'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Total EXP Earned: $_totalExp EXP'),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                      'Current Level EXP: $_expIntoCurrentLevel / $_expNeededForNextLevel EXP'),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'EXP Needed for Lv.${_currentLevel + 1}: $remaining EXP',
-                                    style: const TextStyle(
-                                        color: Color(0xFF1DB954),
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                              actions: [
-                                TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('OK'))
-                              ],
-                            ),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1DB954),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.black, width: 1.5),
-                          ),
-                          child: Text(
-                            'Lv.$_currentLevel',
-                            style: const TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  _profile.displayName,
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: isLight ? Colors.black : Colors.white),
+                CircleAvatar(
+                  radius: 66,
+                  backgroundColor: avatarData != null
+                      ? Color((avatarData['bg'] as num).toInt())
+                      : const Color(0xFF5B9BD5),
+                  child: avatarData != null
+                      ? Icon(
+                          avatarData['icon'] as IconData,
+                          size: 66,
+                          color: Color((avatarData['accent'] as num).toInt()),
+                        )
+                      : Text(
+                          _profile.initialLetter,
+                          style: const TextStyle(
+                              fontSize: 52,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black),
+                        ),
                 ),
-                const SizedBox(height: 4),
-                const Text('Hold Lv badge to view EXP required for next level',
-                    style: TextStyle(fontSize: 11, color: Colors.white54)),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Chip(
-                      avatar: Icon(badge.icon,
-                          color: badge.primaryColor, size: 18),
-                      label: Text(badge.name),
-                      backgroundColor: badge.primaryColor.withOpacity(0.18),
+                // Shiny Badge placed where the old camera icon was
+                Positioned(
+                  bottom: 18,
+                  right: 22,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: [badge.primaryColor, badge.secondaryColor],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: badge.primaryColor.withOpacity(0.85),
+                          blurRadius: 12,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                      border: Border.all(color: Colors.white, width: 1.5),
                     ),
-                    const SizedBox(width: 8),
-                    Chip(
-                      avatar: Icon(frame.icon,
-                          color: frame.primaryColor, size: 18),
-                      label: Text(frame.name),
-                      backgroundColor: frame.primaryColor.withOpacity(0.18),
-                    ),
-                  ],
+                    child: Icon(badge.icon, size: 20, color: Colors.black),
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 10),
+          Center(
+            child: Text(
+              _profile.displayName,
+              style: TextStyle(
+                  fontSize: 23,
+                  fontWeight: FontWeight.bold,
+                  color: isLight ? Colors.black : Colors.white),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Level box placed where Iron Badge box was, and Edit Avatar box placed where Wood Frame box was
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF202020),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: const Color(0xFF1DB954).withOpacity(0.55)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Lv.$_currentLevel',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF1DB954),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$remainingExp EXP to Lv.${_currentLevel + 1}',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white60),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: _openAvatarPickerSheet,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF202020),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.face_retouching_natural,
+                            color: Color(0xFF1DB954), size: 22),
+                        SizedBox(width: 8),
+                        Text(
+                          'Edit Avatar',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
           SizedBox(
             width: double.infinity,
             height: 50,
@@ -3913,33 +4175,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
               onPressed: _openCreateOrEditProfileForm,
             ),
           ),
-          if (_profile.isCreated) ...[
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF202020),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Saved Profile Details',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF1DB954))),
-                  const Divider(color: Colors.white12),
-                  _profileDetailRow(
-                      'Full Name', '${_profile.firstName} ${_profile.lastName}'),
-                  _profileDetailRow('Email', _profile.email),
-                  _profileDetailRow('Phone', _profile.phone),
-                  _profileDetailRow('City', _profile.city),
-                  _profileDetailRow('Address', _profile.address),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -3967,6 +4202,10 @@ class _MainTabScreenState extends State<MainTabScreen> {
   @override
   Widget build(BuildContext context) {
     final isLight = widget.settings.themeMode == 'Light';
+    final double miniProgress = _duration.inMilliseconds > 0
+        ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+
     Widget activePage;
     switch (_currentTabIndex) {
       case 0:
@@ -4004,130 +4243,338 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     child: Container(
                       margin: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFF3A1A1A),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                                color: Colors.black38,
-                                borderRadius: BorderRadius.circular(4)),
-                            child: const Icon(Icons.music_note,
-                                color: Colors.white),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+                            child: Row(
                               children: [
-                                Text(_currentPlayingTrack!.title,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: Colors.white),
-                                    maxLines: 1),
-                                Text(_currentPlayingTrack!.artist,
-                                    style: const TextStyle(
-                                        color: Colors.white70, fontSize: 11),
-                                    maxLines: 1),
+                                _buildGreenMusicLogoTile(size: 40, radius: 5),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(_currentPlayingTrack!.title,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: Colors.white),
+                                          maxLines: 1),
+                                      Text(_currentPlayingTrack!.artist,
+                                          style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 11),
+                                          maxLines: 1),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                    _isLiked(_currentPlayingTrack!)
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: _isLiked(_currentPlayingTrack!)
+                                        ? Colors.redAccent
+                                        : Colors.white,
+                                  ),
+                                  onPressed: () =>
+                                      _toggleLike(_currentPlayingTrack!),
+                                ),
+                                IconButton(
+                                  icon: Icon(
+                                      _isPlaying
+                                          ? Icons.pause
+                                          : Icons.play_arrow,
+                                      color: Colors.white,
+                                      size: 28),
+                                  onPressed: () {
+                                    if (_isPlaying) {
+                                      _audioPlayer.pause();
+                                    } else {
+                                      _audioPlayer.play();
+                                    }
+                                  },
+                                ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: Icon(
-                              _isLiked(_currentPlayingTrack!)
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              color: _isLiked(_currentPlayingTrack!)
-                                  ? Colors.redAccent
-                                  : Colors.white,
-                            ),
-                            onPressed: () =>
-                                _toggleLike(_currentPlayingTrack!),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                                _isPlaying ? Icons.pause : Icons.play_arrow,
-                                color: Colors.white,
-                                size: 28),
-                            onPressed: () {
-                              if (_isPlaying) {
-                                _audioPlayer.pause();
-                              } else {
-                                _audioPlayer.play();
-                              }
-                            },
+                          // Live progress line along bottom of minimized player bar
+                          LinearProgressIndicator(
+                            value: miniProgress,
+                            minHeight: 2.5,
+                            backgroundColor: Colors.white24,
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.white),
                           ),
                         ],
                       ),
                     ),
                   ),
           ),
-          Container(
-            color: isLight ? Colors.white : const Color(0xFF121212),
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavTabItem(
-                    0, Icons.home_outlined, Icons.home_filled, 'Home'),
-                _buildNavTabItem(1, Icons.library_music_outlined,
-                    Icons.library_music, 'Playlist'),
-                _buildNavTabItem(2, Icons.event_available_outlined,
-                    Icons.event_available, 'Quests'),
-                _buildNavTabItem(
-                    3, Icons.person_outline, Icons.person, 'Profile'),
-              ],
-            ),
+          _BouncingBallNavBar(
+            currentIndex: _currentTabIndex,
+            isLight: isLight,
+            onSelect: (idx) => setState(() => _currentTabIndex = idx),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildNavTabItem(
-      int index, IconData iconOutlined, IconData iconFilled, String label) {
-    final selected = _currentTabIndex == index;
-    final isLight = widget.settings.themeMode == 'Light';
-    return GestureDetector(
-      onTap: () => setState(() => _currentTabIndex = index),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected
-              ? (isLight ? Colors.black12 : Colors.white24)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            Icon(selected ? iconFilled : iconOutlined,
-                size: 20, color: isLight ? Colors.black : Colors.white),
-            if (selected) ...[
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: isLight ? Colors.black : Colors.white,
+class _BouncingBallNavBar extends StatelessWidget {
+  final int currentIndex;
+  final bool isLight;
+  final ValueChanged<int> onSelect;
+
+  const _BouncingBallNavBar({
+    required this.currentIndex,
+    required this.isLight,
+    required this.onSelect,
+  });
+
+  static const _tabs = [
+    (Icons.home_outlined, Icons.home_filled, 'Home'),
+    (Icons.library_music_outlined, Icons.library_music, 'Playlist'),
+    (Icons.event_available_outlined, Icons.event_available, 'Quests'),
+    (Icons.person_outline, Icons.person, 'Profile'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: isLight ? Colors.white : const Color(0xFF121212),
+      padding: const EdgeInsets.only(top: 6, bottom: 8, left: 6, right: 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = constraints.maxWidth / _tabs.length;
+          final targetX = (currentIndex * itemWidth) + (itemWidth / 2) - 4.5;
+
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(_tabs.length, (index) {
+                  final selected = currentIndex == index;
+                  final (iconOut, iconFill, label) = _tabs[index];
+                  return SizedBox(
+                    width: itemWidth,
+                    child: GestureDetector(
+                      onTap: () => onSelect(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? (isLight ? Colors.black12 : Colors.white24)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(selected ? iconFill : iconOut,
+                                size: 20,
+                                color: isLight ? Colors.black : Colors.white),
+                            if (selected) ...[
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color:
+                                        isLight ? Colors.black : Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              // Bouncing white ball jumping across tabs
+              TweenAnimationBuilder<double>(
+                key: ValueKey('ball_tab_$currentIndex'),
+                tween: Tween<double>(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 420),
+                curve: Curves.bounceOut,
+                builder: (context, t, child) {
+                  final bounceOffset = -8.0 * math.sin(t * math.pi);
+                  return Positioned(
+                    left: targetX,
+                    top: -3 + bounceOffset,
+                    child: child!,
+                  );
+                },
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: Colors.black54, blurRadius: 3),
+                    ],
+                  ),
                 ),
               ),
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+class _DecorativeFiligreeFramePainter extends CustomPainter {
+  final Color primaryColor;
+  final Color secondaryColor;
+  final bool isGold;
+  final bool isDiamond;
+
+  _DecorativeFiligreeFramePainter({
+    required this.primaryColor,
+    required this.secondaryColor,
+    required this.isGold,
+    required this.isDiamond,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final outerR = size.width / 2 - 12;
+    final innerR = outerR - 14;
+
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = isDiamond ? 3.5 : 2.5
+      ..shader = SweepGradient(
+        colors: [
+          primaryColor,
+          secondaryColor,
+          Colors.white,
+          primaryColor,
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: outerR));
+
+    canvas.drawCircle(center, outerR, ringPaint);
+    canvas.drawCircle(
+        center, innerR, ringPaint..strokeWidth = isGold ? 2.5 : 1.8);
+
+    final petalCount = 16;
+    final petalPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = primaryColor.withOpacity(isDiamond ? 0.95 : 0.85);
+
+    for (int i = 0; i < petalCount; i++) {
+      final angle = (i * 2 * math.pi) / petalCount;
+      canvas.save();
+      canvas.translate(center.dx, center.dy);
+      canvas.rotate(angle);
+
+      final path = Path()
+        ..moveTo(0, -innerR)
+        ..quadraticBezierTo(9, -(innerR + outerR) / 2, 0, -outerR - 7)
+        ..quadraticBezierTo(-9, -(innerR + outerR) / 2, 0, -innerR)
+        ..close();
+      canvas.drawPath(path, petalPaint);
+
+      if (isGold || isDiamond) {
+        canvas.drawCircle(
+          Offset(0, -outerR - 9),
+          isDiamond ? 3.5 : 2.5,
+          Paint()..color = isDiamond ? Colors.white : const Color(0xFFFFF176),
+        );
+      }
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DecorativeFiligreeFramePainter oldDelegate) {
+    return oldDelegate.primaryColor != primaryColor ||
+        oldDelegate.secondaryColor != secondaryColor ||
+        oldDelegate.isGold != isGold ||
+        oldDelegate.isDiamond != isDiamond;
+  }
+}
+
+class _GreenMusicLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final c = Offset(w / 2, h / 2);
+
+    final greenPaint = Paint()
+      ..color = const Color(0xFF22C55E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.045
+      ..strokeCap = StrokeCap.round;
+
+    final fillGreen = Paint()
+      ..color = const Color(0xFF22C55E)
+      ..style = PaintingStyle.fill;
+
+    // Outer dashed/wave ring
+    for (int i = 0; i < 12; i++) {
+      final a = (i * math.pi) / 6;
+      canvas.drawLine(
+        Offset(c.dx + math.cos(a) * w * 0.36, c.dy + math.sin(a) * h * 0.36),
+        Offset(c.dx + math.cos(a) * w * 0.44, c.dy + math.sin(a) * h * 0.44),
+        greenPaint..strokeWidth = w * 0.025,
+      );
+    }
+
+    // Center eighth note beam & stems
+    final beamPath = Path()
+      ..moveTo(w * 0.36, h * 0.32)
+      ..lineTo(w * 0.68, h * 0.24)
+      ..lineTo(w * 0.68, h * 0.33)
+      ..lineTo(w * 0.36, h * 0.41)
+      ..close();
+    canvas.drawPath(beamPath, fillGreen);
+
+    canvas.drawRect(
+        Rect.fromLTWH(w * 0.35, h * 0.36, w * 0.045, h * 0.32), fillGreen);
+    canvas.drawRect(
+        Rect.fromLTWH(w * 0.64, h * 0.29, w * 0.045, h * 0.32), fillGreen);
+
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(w * 0.31, h * 0.68),
+            width: w * 0.16,
+            height: h * 0.11),
+        fillGreen);
+    canvas.drawOval(
+        Rect.fromCenter(
+            center: Offset(w * 0.60, h * 0.61),
+            width: w * 0.16,
+            height: h * 0.11),
+        fillGreen);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _AnimatedPressCard extends StatefulWidget {
