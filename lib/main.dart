@@ -140,7 +140,7 @@ class UserProfileData {
   String phone;
   String city;
   String address;
-  int? selectedAvatarIndex; // null means use first letter of name
+  int? selectedAvatarIndex;
   bool isCreated;
 
   UserProfileData({
@@ -198,7 +198,7 @@ class AppSettings {
   bool pushNotifications;
   String streamingQuality;
   String downloadQuality;
-  String themeMode; // 'Dark', 'Light'
+  String themeMode;
   bool equalizerEnabled;
 
   AppSettings({
@@ -241,8 +241,8 @@ class AppSettings {
 class ShopCosmeticItem {
   final String id;
   final String name;
-  final String tier; // Wood, Iron, Silver, Gold, Diamond, Flowers
-  final String type; // 'badge' or 'frame'
+  final String tier;
+  final String type;
   final int cost;
   final Color primaryColor;
   final Color secondaryColor;
@@ -264,7 +264,7 @@ class MissionItem {
   final String id;
   final String title;
   final String description;
-  final String metricType; // 'songs', 'minutes', 'streak', 'likes', 'playlist'
+  final String metricType;
   final int targetValue;
   final int coinReward;
   final int expReward;
@@ -350,7 +350,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   Timer? _listeningTrackerTimer;
 
-  // Core Music & App Persistence
   List<TrackItem> _playlist = [];
   List<TrackItem> _likedSongs = [];
   List<TrackItem> _downloads = [];
@@ -360,31 +359,27 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Set<String> _hiddenTrackIds = {};
   Set<String> _excludedTrackIds = {};
 
-  // Gamification, Profile, Quests, Level & Economy State
   UserProfileData _profile = UserProfileData();
   int _coins = 50;
   int _totalExp = 0;
   int _listeningStreak = 1;
   int _previousStreakBeforeLoss = 0;
   String _lastActiveDateStr = '';
-  int _dailyRewardDayIndex = 1; // 1 to 7
+  int _dailyRewardDayIndex = 1;
   String _lastDailyClaimDateStr = '';
   int _streakSaverTokens = 1;
   DateTime? _doubleExpEndTime;
 
-  // Long-Term Mission Progress Counters
   int _totalSongsListened = 0;
   int _totalUsageMinutes = 23;
   int _currentTrackSecondsListened = 0;
   int _lastAwardedMinuteBlock = 0;
   Set<String> _claimedMissionIds = {};
 
-  // Exchange Store Owned & Equipped Cosmetics
   Set<String> _ownedCosmeticIds = {'badge_wood', 'frame_wood'};
   String _equippedBadgeId = 'badge_wood';
   String _equippedFrameId = 'frame_wood';
 
-  // Playback State
   TrackItem? _currentPlayingTrack;
   bool _isPlaying = false;
   Duration _position = Duration.zero;
@@ -393,7 +388,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
   late final List<BoxModel> _top8Shortcuts;
   late final List<HomeSection> _homeSections;
 
-  // Bundled Root Asset File from pubspec.yaml
   static const String _bundledAssetPath = 'sample_track_1.mp3';
 
   final List<int> _palette = const [
@@ -409,7 +403,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     0xFFAF2896,
   ];
 
-  // JioHotstar-style Avatar Choices
   static const List> _avatarCatalog = [
     {'name': 'Beat King', 'icon': Icons.headphones, 'bg': 0xFF1DB954},
     {'name': 'Star Boy', 'icon': Icons.star_rounded, 'bg': 0xFFE8115B},
@@ -423,9 +416,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     {'name': 'Galaxy', 'icon': Icons.auto_awesome, 'bg': 0xFF477D95},
   ];
 
-  // Exchange Store Badges & Frames Catalog
   static const List<ShopCosmeticItem> _shopItems = [
-    // Badges
     ShopCosmeticItem(
       id: 'badge_wood',
       name: 'Wood Badge',
@@ -476,7 +467,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       secondaryColor: Color(0xFF0284C7),
       icon: Icons.diamond,
     ),
-    // Avatar Frames
     ShopCosmeticItem(
       id: 'frame_wood',
       name: 'Wood Frame',
@@ -539,7 +529,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     ),
   ];
 
-  // Long-Term Missions (Months of Progression)
   static const List<MissionItem> _longTermMissions = [
     MissionItem(
       id: 'm_songs_10',
@@ -633,10 +622,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     _startSecondBySecondExpAndUsageTracker();
   }
 
-  // ==========================================================================
-  // LEVEL & EXP CALCULATION (FREE FIRE STYLE SCALING)
-  // ==========================================================================
-
   bool get _isDoubleExpActive =>
       _doubleExpEndTime != null && DateTime.now().isBefore(_doubleExpEndTime!);
 
@@ -656,7 +641,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
   }
 
   int _expRequiredForLevel(int level) {
-    // Increases with every level: Lv.1 needs 200 EXP, Lv.2 needs 350 EXP, Lv.3 needs 500 EXP...
     return 200 + (level - 1) * 150;
   }
 
@@ -678,18 +662,18 @@ class _MainTabScreenState extends State<MainTabScreen> {
   int get _expNeededForNextLevel => _expRequiredForLevel(_currentLevel);
 
   void _grantExp(int baseExp) {
-    final earned = _isDoubleExpActive ? baseExp * 2 : baseExp;
-    final oldLv = _currentLevel;
+    final int earned = _isDoubleExpActive ? baseExp * 2 : baseExp;
+    final int oldLv = _currentLevel;
     setState(() {
       _totalExp += earned;
     });
-    final newLv = _currentLevel;
+    final int newLv = _currentLevel;
     if (newLv > oldLv && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFF1DB954),
           content: Text(
-            '🎉 LEVEL UP! You reached Lv.$newLv!',
+            'LEVEL UP! You reached Lv.$newLv!',
             style: const TextStyle(
                 color: Colors.black, fontWeight: FontWeight.bold),
           ),
@@ -698,19 +682,16 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
   }
 
-  // Tracks active listening seconds to award 50 EXP per minute block (0-1m = 50, 1-2m = +50 -> 100 total, etc.)
   void _startSecondBySecondExpAndUsageTracker() {
     _listeningTrackerTimer =
         Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted || !_isPlaying) return;
       _currentTrackSecondsListened++;
 
-      // Check daily streak validation on active listening >= 1 second
       if (_currentTrackSecondsListened == 1) {
         _validateAndIncrementDailyStreak();
       }
 
-      // Every 60 seconds of listening increases total usage minutes
       if (_currentTrackSecondsListened % 60 == 0) {
         setState(() {
           _totalUsageMinutes += 1;
@@ -718,8 +699,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
         _savePersistentState();
       }
 
-      // 0s-60s = block 1 (+50 EXP), 61s-120s = block 2 (+50 EXP -> 100 total), etc.
-      final currentMinuteBlock = ((_currentTrackSecondsListened - 1) ~/ 60) + 1;
+      final int currentMinuteBlock =
+          ((_currentTrackSecondsListened - 1) ~/ 60) + 1;
       if (currentMinuteBlock > _lastAwardedMinuteBlock) {
         _lastAwardedMinuteBlock = currentMinuteBlock;
         _grantExp(50);
@@ -740,7 +721,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
     if (_lastActiveDateStr.isNotEmpty) {
       final lastDate = DateTime.tryParse(_lastActiveDateStr);
       if (lastDate != null) {
-        final diffDays = DateTime.now().difference(lastDate).inDays;
+        final int diffDays = DateTime.now().difference(lastDate).inDays;
         if (diffDays == 1) {
           setState(() {
             _listeningStreak += 1;
@@ -765,10 +746,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     _savePersistentState();
   }
 
-  // ==========================================================================
-  // CATALOG DATA USING BUNDLED sample_track_1.mp3
-  // ==========================================================================
-
   List<TrackItem> _generateSampleTracks(String prefix, String artistName) {
     return List.generate(6, (i) {
       return TrackItem(
@@ -776,7 +753,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         title: i == 0 ? 'Karol G (Hit Single)' : 'Track ${i + 1} ($prefix)',
         artist: i == 0 ? 'Karol G, Judeline, rusowsky' : artistName,
         assetPath: _bundledAssetPath,
-        playsCount: '${(71 - i * 4)},297,233',
+        playsCount: '${(71 - i * 4).clamp(1, 99)},297,233',
       );
     });
   }
@@ -872,7 +849,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
             return CircleItem(
               id: 'artist_${cycle}_$c',
               name: name,
-              monthlyListeners: '${893 - c * 45}K monthly listeners',
+              monthlyListeners: '${(893 - c * 45).clamp(100, 999)}K monthly listeners',
               colorValue: _palette[(c + cycle + 2) % _palette.length],
               popularTracks: _generateSampleTracks(name, name),
             );
@@ -908,13 +885,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
     }
   }
 
-  // ==========================================================================
-  // PERSISTENCE
-  // ==========================================================================
-
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v6.json');
+    return File('${dir.path}/music_app_persistent_v7.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -986,19 +959,24 @@ class _MainTabScreenState extends State<MainTabScreen> {
           if (data['profile'] != null) {
             _profile = UserProfileData.fromJson(data['profile']);
           }
-          _coins = data['coins'] ?? 50;
-          _totalExp = data['totalExp'] ?? 0;
-          _listeningStreak = data['listeningStreak'] ?? 1;
-          _previousStreakBeforeLoss = data['previousStreakBeforeLoss'] ?? 0;
+          _coins = (data['coins'] as num?)?.toInt() ?? 50;
+          _totalExp = (data['totalExp'] as num?)?.toInt() ?? 0;
+          _listeningStreak = (data['listeningStreak'] as num?)?.toInt() ?? 1;
+          _previousStreakBeforeLoss =
+              (data['previousStreakBeforeLoss'] as num?)?.toInt() ?? 0;
           _lastActiveDateStr = data['lastActiveDateStr'] ?? '';
-          _dailyRewardDayIndex = data['dailyRewardDayIndex'] ?? 1;
+          _dailyRewardDayIndex =
+              (data['dailyRewardDayIndex'] as num?)?.toInt() ?? 1;
           _lastDailyClaimDateStr = data['lastDailyClaimDateStr'] ?? '';
-          _streakSaverTokens = data['streakSaverTokens'] ?? 1;
+          _streakSaverTokens =
+              (data['streakSaverTokens'] as num?)?.toInt() ?? 1;
           if (data['doubleExpEndTime'] != null) {
             _doubleExpEndTime = DateTime.tryParse(data['doubleExpEndTime']);
           }
-          _totalSongsListened = data['totalSongsListened'] ?? 0;
-          _totalUsageMinutes = data['totalUsageMinutes'] ?? 23;
+          _totalSongsListened =
+              (data['totalSongsListened'] as num?)?.toInt() ?? 0;
+          _totalUsageMinutes =
+              (data['totalUsageMinutes'] as num?)?.toInt() ?? 23;
           _claimedMissionIds =
               Set<String>.from(data['claimedMissionIds'] ?? const []);
           _ownedCosmeticIds = Set<String>.from(
@@ -1009,10 +987,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       }
     } catch (_) {}
   }
-
-  // ==========================================================================
-  // AUDIO PLAYBACK (USING BUNDLED ASSET)
-  // ==========================================================================
 
   void _initAudioListeners() {
     _audioPlayer.playerStateStream.listen((state) {
@@ -1064,7 +1038,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       });
       _savePersistentState();
 
-      // Plays directly from bundled root asset: sample_track_1.mp3
       await _audioPlayer.setAsset(track.assetPath);
       _audioPlayer.play();
       if (openModal && mounted) _openFullPlayerModal(track);
@@ -1157,10 +1130,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       return 'Nov ${dt.day}, ${dt.year}';
     }
   }
-
-  // ==========================================================================
-  // OPTIONS 3-DOTS MENU
-  // ==========================================================================
 
   void _openTrack3DotsMenu(TrackItem track, {VoidCallback? onHide}) {
     showModalBottomSheet(
@@ -1331,10 +1300,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ==========================================================================
-  // SEARCH SCREEN (YOUTUBE-STYLE BLACK SCREEN)
-  // ==========================================================================
-
   void _openSearchScreen() {
     final searchController = TextEditingController();
     List<TrackItem> searchResults = [];
@@ -1477,10 +1442,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ==========================================================================
-  // SETTINGS, FEEDBACK & EQUALIZER
-  // ==========================================================================
-
   void _openFeedbackScreen() {
     final nameCtrl = TextEditingController();
     final subjectCtrl = TextEditingController();
@@ -1620,7 +1581,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         child: RotatedBox(
                           quarterTurns: 3,
                           child: Slider(
-                            value: 3.0 + (i * 1.5),
+                            value: (3.0 + (i * 1.5)).clamp(-15.0, 15.0),
                             min: -15.0,
                             max: 15.0,
                             activeColor: Colors.amber,
@@ -1860,10 +1821,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       ),
     );
   }
-
-  // ==========================================================================
-  // BOX & ARTIST DETAIL SCREENS (WITH HERO EXPANSION)
-  // ==========================================================================
 
   void _openBoxDetailScreen(BoxModel box) {
     final tracks =
@@ -2230,10 +2187,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ==========================================================================
-  // FULL PLAYER MODAL (WITH SLIDER, LYRICS & BEAT ANIMATION)
-  // ==========================================================================
-
   void _openFullPlayerModal(TrackItem track) {
     showModalBottomSheet(
       context: context,
@@ -2243,12 +2196,13 @@ class _MainTabScreenState extends State<MainTabScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final activeTrack = _currentPlayingTrack ?? track;
-            final maxDur = _duration.inSeconds.toDouble() > 0
+            final double maxDur = _duration.inSeconds.toDouble() > 0
                 ? _duration.inSeconds.toDouble()
                 : 1.0;
-            final curPos = _position.inSeconds.toDouble().clamp(0.0, maxDur);
-            final liked = _isLiked(activeTrack);
-            final inPlaylist = _isInPlaylist(activeTrack);
+            final double curPos =
+                _position.inSeconds.toDouble().clamp(0.0, maxDur);
+            final bool liked = _isLiked(activeTrack);
+            final bool inPlaylist = _isInPlaylist(activeTrack);
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.94,
@@ -2292,18 +2246,22 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               child: Row(
                                 children: List.generate(
                                   5,
-                                  (i) => AnimatedContainer(
-                                    duration:
-                                        Duration(milliseconds: 200 + i * 80),
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 3),
-                                    width: 4,
-                                    height: 14.0 + (i % 3) * 14,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF1DB954),
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
+                                  (i) {
+                                    final int ms = (200 + i * 80).toInt();
+                                    final double barH =
+                                        (14.0 + (i % 3) * 14).toDouble();
+                                    return AnimatedContainer(
+                                      duration: Duration(milliseconds: ms),
+                                      margin: const EdgeInsets.symmetric(
+                                          horizontal: 3),
+                                      width: 4,
+                                      height: barH,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1DB954),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
                             ),
@@ -2465,10 +2423,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       },
     );
   }
-
-  // ==========================================================================
-  // TAB 1: HOME TAB
-  // ==========================================================================
 
   Widget _buildHomeTab() {
     final filteredSections = _homeSections.where((section) {
@@ -2844,10 +2798,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ==========================================================================
-  // TAB 2: YOUR PLAYLIST & LIBRARY TAB
-  // ==========================================================================
-
   Widget _buildPlaylistLibraryTab() {
     final isLight = widget.settings.themeMode == 'Light';
     return DefaultTabController(
@@ -2931,10 +2881,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 
-  // ==========================================================================
-  // TAB 3: QUESTS TAB (DAILY REWARDS, MYSTERY BOX, LONG MISSIONS, EXCHANGE)
-  // ==========================================================================
-
   void _claimDailyReward(int day) {
     final today = _todayKey();
     if (_lastDailyClaimDateStr == today) {
@@ -2950,22 +2896,21 @@ class _MainTabScreenState extends State<MainTabScreen> {
     setState(() {
       _lastDailyClaimDateStr = today;
       if (day < 7) {
-        final rewardCoins = day * 10; // Day 1=10, Day 2=20 ... Day 6=60
+        final int rewardCoins = (day * 10).toInt();
         _coins += rewardCoins;
         _dailyRewardDayIndex += 1;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               backgroundColor: const Color(0xFF1DB954),
-              content: Text('Claimed Day $day Reward: +$rewardCoins Coins! 🪙',
+              content: Text('Claimed Day $day Reward: +$rewardCoins Coins!',
                   style: const TextStyle(
                       color: Colors.black, fontWeight: FontWeight.bold))),
         );
       } else {
-        // Day 7 Mystery Box!
         _coins += 200;
         _streakSaverTokens += 1;
         _doubleExpEndTime = DateTime.now().add(const Duration(hours: 24));
-        _dailyRewardDayIndex = 1; // Cycle resets for next week
+        _dailyRewardDayIndex = 1;
         _showMysteryBoxOpenedDialog();
       }
     });
@@ -3025,7 +2970,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Restore Lost Streak? 🔥'),
+        title: const Text('Restore Lost Streak?'),
         content: Text(
           'Your previous streak of $_previousStreakBeforeLoss days reset to 0 because you missed a day.\n\nStreak Saver Tokens available: $_streakSaverTokens',
         ),
@@ -3048,7 +2993,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                           content: Text(
-                              '🔥 Streak restored to $_listeningStreak days!')),
+                              'Streak restored to $_listeningStreak days!')),
                     );
                   }
                 : null,
@@ -3116,17 +3061,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
             indicatorColor: const Color(0xFF1DB954),
             labelColor: isLight ? Colors.black : Colors.white,
             tabs: const [
-              // Calendar + Star custom Daily Rewards icon
               Tab(
                 icon: Icon(Icons.event_available),
                 text: 'Daily Rewards',
               ),
-              // Target Bullseye Missions icon
               Tab(
                 icon: Icon(Icons.track_changes),
                 text: 'Missions',
               ),
-              // Swap Arrows Exchange icon
               Tab(
                 icon: Icon(Icons.swap_horiz),
                 text: 'Exchange',
@@ -3136,7 +3078,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
         ),
         body: TabBarView(
           children: [
-            // Sub-tab 1: 7-Day Daily Rewards
             ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
               children: [
@@ -3163,7 +3104,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         style: TextStyle(
                             fontSize: 17, fontWeight: FontWeight.bold)),
                     Chip(
-                      label: Text('Tokens: $_streakSaverTokens 🛡️'),
+                      label: Text('Tokens: $_streakSaverTokens'),
                       backgroundColor: Colors.blueGrey.withOpacity(0.3),
                     ),
                   ],
@@ -3246,7 +3187,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             Text(
                               isMysteryBox
                                   ? 'Mystery Box'
-                                  : '+${day * 10} Coins',
+                                  : '+${(day * 10).toInt()} Coins',
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white),
@@ -3254,7 +3195,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
                             const SizedBox(height: 4),
                             Text(
                               isCompleted
-                                  ? 'Claimed ✓'
+                                  ? 'Claimed'
                                   : (isTodayTarget ? 'TAP TO CLAIM' : 'Locked'),
                               style: TextStyle(
                                 fontSize: 11,
@@ -3274,17 +3215,15 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 ),
               ],
             ),
-
-            // Sub-tab 2: Long-Term Missions
             ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
               itemCount: _longTermMissions.length,
               itemBuilder: (context, idx) {
                 final m = _longTermMissions[idx];
-                final current = _getMissionProgress(m);
-                final isClaimed = _claimedMissionIds.contains(m.id);
-                final canClaim = !isClaimed && current >= m.targetValue;
-                final progressRatio =
+                final int current = _getMissionProgress(m);
+                final bool isClaimed = _claimedMissionIds.contains(m.id);
+                final bool canClaim = !isClaimed && current >= m.targetValue;
+                final double progressRatio =
                     (current / m.targetValue).clamp(0.0, 1.0);
 
                 return Card(
@@ -3307,7 +3246,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                                       fontSize: 15,
                                       color: Colors.white)),
                             ),
-                            Text('+${m.coinReward} 🪙  +${m.expReward} EXP',
+                            Text(
+                                '+${m.coinReward.toInt()} Coins  +${m.expReward.toInt()} EXP',
                                 style: const TextStyle(
                                     color: Colors.amber,
                                     fontWeight: FontWeight.bold,
@@ -3343,23 +3283,25 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               ),
                               onPressed: canClaim
                                   ? () {
+                                      final int coinGain = m.coinReward.toInt();
+                                      final int expGain = m.expReward.toInt();
                                       setState(() {
                                         _claimedMissionIds.add(m.id);
-                                        _coins += m.coinReward;
+                                        _coins = (_coins + coinGain).toInt();
                                       });
-                                      _grantExp(m.expReward);
+                                      _grantExp(expGain);
                                       _savePersistentState();
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
                                             content: Text(
-                                                'Mission Completed! +${m.coinReward} Coins & +${m.expReward} EXP')),
+                                                'Mission Completed! +$coinGain Coins & +$expGain EXP')),
                                       );
                                     }
                                   : null,
                               child: Text(
                                 isClaimed
-                                    ? 'Completed ✓'
+                                    ? 'Completed'
                                     : (canClaim ? 'Claim Reward' : 'In Progress'),
                                 style: TextStyle(
                                     color:
@@ -3374,17 +3316,16 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 );
               },
             ),
-
-            // Sub-tab 3: Exchange Store (Badges & Avatar Frames)
             ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
               itemCount: _shopItems.length,
               itemBuilder: (context, idx) {
                 final item = _shopItems[idx];
-                final isOwned = _ownedCosmeticIds.contains(item.id);
-                final isEquipped = item.type == 'badge'
+                final bool isOwned = _ownedCosmeticIds.contains(item.id);
+                final bool isEquipped = item.type == 'badge'
                     ? _equippedBadgeId == item.id
                     : _equippedFrameId == item.id;
+                final int itemCost = item.cost.toInt();
 
                 return Card(
                   color: const Color(0xFF202020),
@@ -3423,9 +3364,9 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Equipped ${item.name}!')),
                           );
-                        } else if (_coins >= item.cost) {
+                        } else if (_coins >= itemCost) {
                           setState(() {
-                            _coins -= item.cost;
+                            _coins = (_coins - itemCost).toInt();
                             _ownedCosmeticIds.add(item.id);
                             if (item.type == 'badge') {
                               _equippedBadgeId = item.id;
@@ -3443,14 +3384,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                                 content: Text(
-                                    'Need ${item.cost - _coins} more coins!')),
+                                    'Need ${(itemCost - _coins).toInt()} more coins!')),
                           );
                         }
                       },
                       child: Text(
                         isEquipped
                             ? 'Equipped'
-                            : (isOwned ? 'Equip' : '${item.cost} 🪙'),
+                            : (isOwned ? 'Equip' : '$itemCost Coins'),
                         style: const TextStyle(
                             color: Colors.black, fontWeight: FontWeight.bold),
                       ),
@@ -3464,10 +3405,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       ),
     );
   }
-
-  // ==========================================================================
-  // TAB 4: PROFILE TAB (CREATE PROFILE, AVATAR PICKER, LV.X, FRAMES & BADGES)
-  // ==========================================================================
 
   ShopCosmeticItem get _currentBadge => _shopItems.firstWhere(
       (i) => i.id == _equippedBadgeId,
@@ -3727,7 +3664,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
           children: [
             const SizedBox(height: 12),
             TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.2, end: 1.0),
+              tween: Tween<double>(begin: 0.2, end: 1.0),
               duration: const Duration(milliseconds: 500),
               curve: Curves.elasticOut,
               builder: (context, scale, child) =>
@@ -3787,14 +3724,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 110),
         children: [
-          // Avatar with Equipped Frame + Photo Picker + Level Pill (Lv.1, Lv.2...)
           Center(
             child: Column(
               children: [
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Equipped Frame Border
                     Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
@@ -3826,7 +3761,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                               ),
                       ),
                     ),
-                    // JioHotstar Photo/Avatar Edit Button
                     Positioned(
                       bottom: 2,
                       right: 2,
@@ -3846,14 +3780,14 @@ class _MainTabScreenState extends State<MainTabScreen> {
                         ),
                       ),
                     ),
-                    // Free Fire Style Level Badge (Hold to see EXP needed!)
                     Positioned(
                       top: -4,
                       left: -14,
                       child: GestureDetector(
                         onLongPress: () {
-                          final remaining =
-                              _expNeededForNextLevel - _expIntoCurrentLevel;
+                          final int remaining =
+                              (_expNeededForNextLevel - _expIntoCurrentLevel)
+                                  .toInt();
                           showDialog(
                             context: context,
                             builder: (ctx) => AlertDialog(
@@ -3916,7 +3850,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
                 const Text('Hold Lv badge to view EXP required for next level',
                     style: TextStyle(fontSize: 11, color: Colors.white54)),
                 const SizedBox(height: 10),
-                // Equipped Badge & Frame Display
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -3938,10 +3871,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Create Your Profile / Edit Profile Card
           SizedBox(
             width: double.infinity,
             height: 50,
@@ -3963,7 +3893,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
               onPressed: _openCreateOrEditProfileForm,
             ),
           ),
-
           if (_profile.isCreated) ...[
             const SizedBox(height: 20),
             Container(
@@ -4014,10 +3943,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
       ),
     );
   }
-
-  // ==========================================================================
-  // MAIN SCAFFOLD WITH 4 ANIMATED BOTTOM TABS
-  // ==========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -4135,8 +4060,8 @@ class _MainTabScreenState extends State<MainTabScreen> {
                     0, Icons.home_outlined, Icons.home_filled, 'Home'),
                 _buildNavTabItem(1, Icons.library_music_outlined,
                     Icons.library_music, 'Playlist'),
-                _buildNavTabItem(
-                    2, Icons.event_available_outlined, Icons.event_available, 'Quests'),
+                _buildNavTabItem(2, Icons.event_available_outlined,
+                    Icons.event_available, 'Quests'),
                 _buildNavTabItem(
                     3, Icons.person_outline, Icons.person, 'Profile'),
               ],
@@ -4184,10 +4109,6 @@ class _MainTabScreenState extends State<MainTabScreen> {
     );
   }
 }
-
-// ============================================================================
-// SPRING SCALE ANIMATION WRAPPER
-// ============================================================================
 
 class _AnimatedPressCard extends StatefulWidget {
   final Widget child;
