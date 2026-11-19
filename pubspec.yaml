@@ -1,18 +1,19 @@
 name: my_music_app
-description: Customizable Flutter music streaming application.
+description: A customizable music streaming app built with Flutter.
 publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '^3.5.0'
+  sdk: '>=3.4.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_local_notifications: ^17.2.4
   just_audio: ^0.9.40
   path_provider: ^2.1.4
   share_plus: ^10.0.2
-  flutter_local_notifications: ^17.2.3
 
 dev_dependencies:
   flutter_test:
@@ -22,5 +23,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - sample_track_1.mp3
-    - taylor_swift.mp3
+    - assets/sample_track_1.mp3
+    - assets/taylor_swift.mp3
