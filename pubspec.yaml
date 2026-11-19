@@ -1,20 +1,13 @@
-name: music_stream
-description: Custom music streaming app.
-publish_to: 'none'
-version: 1.0.0+1
-
-environment:
-  sdk: '>=3.0.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
-  just_audio: ^0.9.36
-  path_provider: ^2.1.2
-  share_plus: ^7.2.2
+  just_audio: ^0.9.40
+  path_provider: ^2.1.4
+  share_plus: ^10.0.2
+  flutter_local_notifications: ^17.2.3
 
 flutter:
   uses-material-design: true
-
   assets:
     - sample_track_1.mp3
+    - taylor_swift.mp3
