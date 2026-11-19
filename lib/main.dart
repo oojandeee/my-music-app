@@ -54,15 +54,15 @@ class TrackItem {
       };
 
   factory TrackItem.fromJson(Map<String, dynamic> json) => TrackItem(
-        id: json['id'] ?? '',
-        title: json['title'] ?? 'Unknown Title',
-        artist: json['artist'] ?? 'Unknown Artist',
-        assetPath: json['assetPath'] ?? 'sample_track_1.mp3',
-        playsCount: json['playsCount'] ?? '71,297,233',
+        id: (json['id'] ?? '').toString(),
+        title: (json['title'] ?? 'Unknown Title').toString(),
+        artist: (json['artist'] ?? 'Unknown Artist').toString(),
+        assetPath: (json['assetPath'] ?? 'sample_track_1.mp3').toString(),
+        playsCount: (json['playsCount'] ?? '71,297,233').toString(),
         playedAt: json['playedAt'] != null
-            ? DateTime.parse(json['playedAt'])
+            ? DateTime.tryParse(json['playedAt'].toString()) ?? DateTime.now()
             : DateTime.now(),
-        isDownloaded: json['isDownloaded'] ?? false,
+        isDownloaded: json['isDownloaded'] == true,
       );
 }
 
@@ -187,13 +187,13 @@ class UserProfileData {
 
   factory UserProfileData.fromJson(Map<String, dynamic> json) =>
       UserProfileData(
-        firstName: json['firstName'] ?? '',
-        lastName: json['lastName'] ?? '',
-        birthday: json['birthday'] ?? json['email'] ?? '',
-        city: json['city'] ?? '',
-        address: json['address'] ?? '',
+        firstName: (json['firstName'] ?? '').toString(),
+        lastName: (json['lastName'] ?? '').toString(),
+        birthday: (json['birthday'] ?? json['email'] ?? '').toString(),
+        city: (json['city'] ?? '').toString(),
+        address: (json['address'] ?? '').toString(),
         selectedAvatarIndex: (json['selectedAvatarIndex'] as num?)?.toInt(),
-        isCreated: json['isCreated'] ?? false,
+        isCreated: json['isCreated'] == true,
       );
 }
 
@@ -205,9 +205,9 @@ class AppSettings {
   bool pushNotifications;
   String streamingQuality;
   String downloadQuality;
-  String themeMode; // 'Dark', 'Light', 'Neon', 'Midnight'
+  String themeMode;
   bool equalizerEnabled;
-  double volumeBoost; // 0.2 to 2.0 (1.0 = 100%, 2.0 = 200% boost)
+  double volumeBoost;
 
   AppSettings({
     this.privateSession = false,
@@ -236,15 +236,15 @@ class AppSettings {
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> json) => AppSettings(
-        privateSession: json['privateSession'] ?? false,
-        publicPlaylists: json['publicPlaylists'] ?? true,
-        gaplessPlayback: json['gaplessPlayback'] ?? true,
-        autoplay: json['autoplay'] ?? true,
-        pushNotifications: json['pushNotifications'] ?? true,
-        streamingQuality: json['streamingQuality'] ?? 'High',
-        downloadQuality: json['downloadQuality'] ?? 'Very High',
-        themeMode: json['themeMode'] ?? 'Dark',
-        equalizerEnabled: json['equalizerEnabled'] ?? true,
+        privateSession: json['privateSession'] == true,
+        publicPlaylists: json['publicPlaylists'] != false,
+        gaplessPlayback: json['gaplessPlayback'] != false,
+        autoplay: json['autoplay'] != false,
+        pushNotifications: json['pushNotifications'] != false,
+        streamingQuality: (json['streamingQuality'] ?? 'High').toString(),
+        downloadQuality: (json['downloadQuality'] ?? 'Very High').toString(),
+        themeMode: (json['themeMode'] ?? 'Dark').toString(),
+        equalizerEnabled: json['equalizerEnabled'] != false,
         volumeBoost: (json['volumeBoost'] as num?)?.toDouble() ?? 1.25,
       );
 }
@@ -348,7 +348,8 @@ class MainAppRootState extends State<MainAppRoot> {
             : ColorScheme.dark(
                 primary: primaryAccent,
                 secondary: isNeon ? const Color(0xFFFF007F) : primaryAccent,
-                surface: isNeon ? const Color(0xFF130D2E) : const Color(0xFF181818),
+                surface:
+                    isNeon ? const Color(0xFF130D2E) : const Color(0xFF181818),
               ),
       ),
       home:
@@ -449,17 +450,16 @@ class _MainTabScreenState extends State<MainTabScreen>
     0xFFAF2896,
   ];
 
-  // Rich avatar catalog inspired by the profile screenshots + custom avatars (no text labels)
   static const List> _avatarCatalog = [
-    {'icon': Icons.pets, 'bg': 0xFF7C4A21, 'accent': 0xFFFBBF24}, // Cub / Lion style
-    {'icon': Icons.shield_moon, 'bg': 0xFF7F1D1D, 'accent': 0xFFF59E0B}, // Armor hero style
-    {'icon': Icons.sentiment_satisfied_alt, 'bg': 0xFF2563EB, 'accent': 0xFFA855F7}, // Smiley gradient style
-    {'icon': Icons.cruelty_free, 'bg': 0xFF1F2937, 'accent': 0xFFF3F4F6}, // Panda style
-    {'icon': Icons.face_3, 'bg': 0xFF581C87, 'accent': 0xFFF472B6}, // Character portrait
-    {'icon': Icons.sports_martial_arts, 'bg': 0xFF312E81, 'accent': 0xFF38BDF8}, // Masked warrior
-    {'icon': Icons.bug_report, 'bg': 0xFF991B1B, 'accent': 0xFFEF4444}, // Red / spider style
-    {'icon': Icons.rocket_launch, 'bg': 0xFF1E3A8A, 'accent': 0xFF4ADE80}, // Space ranger style
-    {'icon': Icons.accessibility_new, 'bg': 0xFF334155, 'accent': 0xFFE2E8F0}, // Bot / character
+    {'icon': Icons.pets, 'bg': 0xFF7C4A21, 'accent': 0xFFFBBF24},
+    {'icon': Icons.shield_moon, 'bg': 0xFF7F1D1D, 'accent': 0xFFF59E0B},
+    {'icon': Icons.sentiment_satisfied_alt, 'bg': 0xFF2563EB, 'accent': 0xFFA855F7},
+    {'icon': Icons.cruelty_free, 'bg': 0xFF1F2937, 'accent': 0xFFF3F4F6},
+    {'icon': Icons.face_3, 'bg': 0xFF581C87, 'accent': 0xFFF472B6},
+    {'icon': Icons.sports_martial_arts, 'bg': 0xFF312E81, 'accent': 0xFF38BDF8},
+    {'icon': Icons.bug_report, 'bg': 0xFF991B1B, 'accent': 0xFFEF4444},
+    {'icon': Icons.rocket_launch, 'bg': 0xFF1E3A8A, 'accent': 0xFF4ADE80},
+    {'icon': Icons.accessibility_new, 'bg': 0xFF334155, 'accent': 0xFFE2E8F0},
     {'icon': Icons.headphones, 'bg': 0xFF064E3B, 'accent': 0xFF1DB954},
     {'icon': Icons.graphic_eq, 'bg': 0xFF0F172A, 'accent': 0xFF00F5D4},
     {'icon': Icons.local_fire_department, 'bg': 0xFF7C2D12, 'accent': 0xFFFB923C},
@@ -684,7 +684,6 @@ class _MainTabScreenState extends State<MainTabScreen>
     final effectiveVol = widget.settings.equalizerEnabled
         ? widget.settings.volumeBoost.clamp(0.0, 2.0)
         : 1.0;
-    // just_audio setVolume accepts 0.0..1.0+; on Android/platforms supporting >1.0 we pass clamped safe value
     _audioPlayer.setVolume(effectiveVol.clamp(0.0, 1.0));
   }
 
@@ -1116,14 +1115,16 @@ class _MainTabScreenState extends State<MainTabScreen>
           _listeningStreak = (data['listeningStreak'] as num?)?.toInt() ?? 1;
           _previousStreakBeforeLoss =
               (data['previousStreakBeforeLoss'] as num?)?.toInt() ?? 0;
-          _lastActiveDateStr = data['lastActiveDateStr'] ?? '';
+          _lastActiveDateStr = (data['lastActiveDateStr'] ?? '').toString();
           _dailyRewardDayIndex =
               (data['dailyRewardDayIndex'] as num?)?.toInt() ?? 1;
-          _lastDailyClaimDateStr = data['lastDailyClaimDateStr'] ?? '';
+          _lastDailyClaimDateStr =
+              (data['lastDailyClaimDateStr'] ?? '').toString();
           _streakSaverTokens =
               (data['streakSaverTokens'] as num?)?.toInt() ?? 1;
           if (data['doubleExpEndTime'] != null) {
-            _doubleExpEndTime = DateTime.tryParse(data['doubleExpEndTime']);
+            _doubleExpEndTime =
+                DateTime.tryParse(data['doubleExpEndTime'].toString());
           }
           _totalSongsListened =
               (data['totalSongsListened'] as num?)?.toInt() ?? 0;
@@ -1133,8 +1134,10 @@ class _MainTabScreenState extends State<MainTabScreen>
               Set<String>.from(data['claimedMissionIds'] ?? const []);
           _ownedCosmeticIds = Set<String>.from(
               data['ownedCosmeticIds'] ?? const ['badge_wood', 'frame_wood']);
-          _equippedBadgeId = data['equippedBadgeId'] ?? 'badge_wood';
-          _equippedFrameId = data['equippedFrameId'] ?? 'frame_wood';
+          _equippedBadgeId =
+              (data['equippedBadgeId'] ?? 'badge_wood').toString();
+          _equippedFrameId =
+              (data['equippedFrameId'] ?? 'frame_wood').toString();
         });
         _applyVolumeBoost();
       }
@@ -2418,7 +2421,8 @@ class _MainTabScreenState extends State<MainTabScreen>
             children: List.generate(barCount, (i) {
               final phase = (i * 0.45) + (t * math.pi * 2);
               final factor = _isPlaying
-                  ? (0.25 + 0.75 * ((math.sin(phase) + 1) / 2)).clamp(0.15, 1.0)
+                  ? (0.25 + 0.75 * ((math.sin(phase) + 1) / 2))
+                      .clamp(0.15, 1.0)
                   : 0.2;
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 2.5),
@@ -2592,8 +2596,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                               stream: _audioPlayer.positionStream,
                               initialData: _audioPlayer.position,
                               builder: (context, lSnap) {
-                                final sec = (lSnap.data ?? Duration.zero)
-                                    .inSeconds;
+                                final sec =
+                                    (lSnap.data ?? Duration.zero).inSeconds;
                                 final activeLineIdx =
                                     (sec ~/ 6) % _sampleLyricsLines.length;
                                 return Container(
@@ -2615,8 +2619,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                                             final isCurrent =
                                                 idx == activeLineIdx;
                                             return Padding(
-                                              padding: const EdgeInsets.symmetric(
-                                                  vertical: 6),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 6),
                                               child: Text(
                                                 _sampleLyricsLines[idx],
                                                 style: TextStyle(
@@ -3114,8 +3119,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   Widget _buildTrackListSection(
-      var tracks, String emptyMsg, Function(TrackItem) onRemove) {
-    final List<TrackItem> trackList = List<TrackItem>.from(tracks);
+      List<TrackItem> trackList, String emptyMsg, Function(TrackItem) onRemove) {
     final isLight = widget.settings.themeMode == 'Light';
     if (trackList.isEmpty) {
       return Center(
@@ -4049,7 +4053,6 @@ class _MainTabScreenState extends State<MainTabScreen>
                               color: Colors.black),
                         ),
                 ),
-                // Shiny Badge placed where the old camera icon was
                 Positioned(
                   bottom: 18,
                   right: 22,
@@ -4086,7 +4089,6 @@ class _MainTabScreenState extends State<MainTabScreen>
             ),
           ),
           const SizedBox(height: 16),
-          // Level box placed where Iron Badge box was, and Edit Avatar box placed where Wood Frame box was
           Row(
             children: [
               Expanded(
@@ -4307,7 +4309,6 @@ class _MainTabScreenState extends State<MainTabScreen>
                               ],
                             ),
                           ),
-                          // Live progress line along bottom of minimized player bar
                           LinearProgressIndicator(
                             value: miniProgress,
                             minHeight: 2.5,
@@ -4411,7 +4412,6 @@ class _BouncingBallNavBar extends StatelessWidget {
                   );
                 }),
               ),
-              // Bouncing white ball jumping across tabs
               TweenAnimationBuilder<double>(
                 key: ValueKey('ball_tab_$currentIndex'),
                 tween: Tween<double>(begin: 0.0, end: 1.0),
@@ -4535,7 +4535,6 @@ class _GreenMusicLogoPainter extends CustomPainter {
       ..color = const Color(0xFF22C55E)
       ..style = PaintingStyle.fill;
 
-    // Outer dashed/wave ring
     for (int i = 0; i < 12; i++) {
       final a = (i * math.pi) / 6;
       canvas.drawLine(
@@ -4545,7 +4544,6 @@ class _GreenMusicLogoPainter extends CustomPainter {
       );
     }
 
-    // Center eighth note beam & stems
     final beamPath = Path()
       ..moveTo(w * 0.36, h * 0.32)
       ..lineTo(w * 0.68, h * 0.24)
