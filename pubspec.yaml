@@ -23,5 +23,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/sample_track_1.mp3
-    - assets/taylor_swift.mp3
+    - sample_track_1.mp3
+    - taylor_swift.mp3
