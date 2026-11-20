@@ -57,7 +57,7 @@ class TrackItem {
         id: (json['id'] ?? '').toString(),
         title: (json['title'] ?? 'Unknown Title').toString(),
         artist: (json['artist'] ?? 'Unknown Artist').toString(),
-        assetPath: (json['assetPath'] ?? 'assets/sample_track_1.mp3').toString(),
+        assetPath: (json['assetPath'] ?? 'sample_track_1.mp3').toString(),
         playsCount: (json['playsCount'] ?? '71,297,233').toString(),
         playedAt: json['playedAt'] != null
             ? DateTime.tryParse(json['playedAt'].toString()) ?? DateTime.now()
@@ -415,8 +415,8 @@ class _MainTabScreenState extends State<MainTabScreen>
   late final List<BoxModel> _top8Shortcuts;
   late final List<HomeSection> _homeSections;
 
-  static const String _bundledAssetPath = 'assets/sample_track_1.mp3';
-  static const String _taylorSwiftAssetPath = 'assets/taylor_swift.mp3';
+  static const String _bundledAssetPath = 'sample_track_1.mp3';
+  static const String _taylorSwiftAssetPath = 'taylor_swift.mp3';
 
   static const List<String> _sampleLyricsLines = [
     'Lights go low in the midnight air',
@@ -3978,7 +3978,8 @@ class _MainTabScreenState extends State<MainTabScreen>
             decoration: BoxDecoration(
               color: const Color(0xFF202020),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF1DB954).withOpacity(0.55)),
+              border: Border.all(
+                  color: const Color(0xFF1DB954).withOpacity(0.55)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
