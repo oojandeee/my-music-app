@@ -79,7 +79,8 @@ class BoxModel {
     required this.id,
     required this.name,
     this.subtitle = 'Playlist',
-    this.description = 'The latest & grandest tracks curated for your vibe.',
+    this.description =
+        'Curated collection ready for your repository or custom audio tracks.',
     required this.colorValue,
     this.useGreenMusicLogo = false,
     List<TrackItem>? tracks,
@@ -144,12 +145,31 @@ class HomeSection {
   });
 }
 
+class AvatarPreset {
+  final String id;
+  final String label;
+  final Color bgStart;
+  final Color bgEnd;
+  final String badgeText;
+  final IconData icon;
+
+  const AvatarPreset({
+    required this.id,
+    required this.label,
+    required this.bgStart,
+    required this.bgEnd,
+    required this.badgeText,
+    required this.icon,
+  });
+}
+
 class UserProfileData {
   String firstName;
   String lastName;
   String birthday;
   String city;
   String address;
+  String avatarId;
   bool isCreated;
 
   UserProfileData({
@@ -158,6 +178,7 @@ class UserProfileData {
     this.birthday = '',
     this.city = '',
     this.address = '',
+    this.avatarId = 'avatar_kids',
     this.isCreated = false,
   });
 
@@ -179,6 +200,7 @@ class UserProfileData {
         'birthday': birthday,
         'city': city,
         'address': address,
+        'avatarId': avatarId,
         'isCreated': isCreated,
       };
 
@@ -189,6 +211,7 @@ class UserProfileData {
         birthday: (json['birthday'] ?? json['email'] ?? '').toString(),
         city: (json['city'] ?? '').toString(),
         address: (json['address'] ?? '').toString(),
+        avatarId: (json['avatarId'] ?? 'avatar_kids').toString(),
         isCreated: json['isCreated'] == true,
       );
 }
@@ -415,8 +438,107 @@ class _MainTabScreenState extends State<MainTabScreen>
   late final List<BoxModel> _top8Shortcuts;
   late final List<HomeSection> _homeSections;
 
-  static const String _bundledAssetPath = 'sample_track_1.mp3';
-  static const String _taylorSwiftAssetPath = 'taylor_swift.mp3';
+  static const String _karolAssetPath = 'sample_track_1.mp3';
+  static const String _taylorAssetPath = 'taylor_swift.mp3';
+
+  static const List<AvatarPreset> _avatarPresets = [
+    AvatarPreset(
+      id: 'avatar_kids',
+      label: 'Kids',
+      bgStart: Color(0xFF7C3AED),
+      bgEnd: Color(0xFFEC4899),
+      badgeText: 'KIDS',
+      icon: Icons.child_care,
+    ),
+    AvatarPreset(
+      id: 'avatar_spider',
+      label: 'Spider',
+      bgStart: Color(0xFFDC2626),
+      bgEnd: Color(0xFF1E3A8A),
+      badgeText: 'SPIDER',
+      icon: Icons.flash_on,
+    ),
+    AvatarPreset(
+      id: 'avatar_buzz',
+      label: 'Space',
+      bgStart: Color(0xFF16A34A),
+      bgEnd: Color(0xFF6D28D9),
+      badgeText: 'SPACE',
+      icon: Icons.rocket_launch,
+    ),
+    AvatarPreset(
+      id: 'avatar_mirabel',
+      label: 'Mirabel',
+      bgStart: Color(0xFF8B5CF6),
+      bgEnd: Color(0xFFF472B6),
+      badgeText: 'STAR',
+      icon: Icons.auto_awesome,
+    ),
+    AvatarPreset(
+      id: 'avatar_iron',
+      label: 'Armor',
+      bgStart: Color(0xFFB91C1C),
+      bgEnd: Color(0xFFF59E0B),
+      badgeText: 'MK85',
+      icon: Icons.shield,
+    ),
+    AvatarPreset(
+      id: 'avatar_simba',
+      label: 'Lion',
+      bgStart: Color(0xFFD97706),
+      bgEnd: Color(0xFF78350F),
+      badgeText: 'LION',
+      icon: Icons.pets,
+    ),
+    AvatarPreset(
+      id: 'avatar_smiley',
+      label: 'Smile',
+      bgStart: Color(0xFF0284C7),
+      bgEnd: Color(0xFF7C3AED),
+      badgeText: ':)',
+      icon: Icons.sentiment_satisfied_alt,
+    ),
+    AvatarPreset(
+      id: 'avatar_panda',
+      label: 'Panda',
+      bgStart: Color(0xFF334155),
+      bgEnd: Color(0xFF0F172A),
+      badgeText: 'PANDA',
+      icon: Icons.cruelty_free,
+    ),
+    AvatarPreset(
+      id: 'avatar_moana',
+      label: 'Ocean',
+      bgStart: Color(0xFF0D9488),
+      bgEnd: Color(0xFF1D4ED8),
+      badgeText: 'WAVE',
+      icon: Icons.waves,
+    ),
+    AvatarPreset(
+      id: 'avatar_bart',
+      label: 'Bart',
+      bgStart: Color(0xFFFACC15),
+      bgEnd: Color(0xFFEA580C),
+      badgeText: 'BART',
+      icon: Icons.face,
+    ),
+    AvatarPreset(
+      id: 'avatar_baymax',
+      label: 'Care',
+      bgStart: Color(0xFFE2E8F0),
+      bgEnd: Color(0xFF64748B),
+      badgeText: 'BOT',
+      icon: Icons.favorite,
+    ),
+    AvatarPreset(
+      id: 'avatar_grogu',
+      label: 'Force',
+      bgStart: Color(0xFF4D7C0F),
+      bgEnd: Color(0xFF1E293B),
+      badgeText: 'JEDI',
+      icon: Icons.spa,
+    ),
+  ];
 
   static const List<String> _sampleLyricsLines = [
     'Lights go low in the midnight air',
@@ -648,7 +770,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     super.initState();
     _beatAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 650),
     )..repeat(reverse: true);
     _buildCatalogData();
     _loadPersistentState();
@@ -788,28 +910,21 @@ class _MainTabScreenState extends State<MainTabScreen>
     _savePersistentState();
   }
 
-  List<TrackItem> _generateSampleTracks(String prefix, String artistName,
-      {bool includeTaylorSecond = false}) {
-    return List.generate(6, (i) {
-      if (includeTaylorSecond && i == 1) {
-        return TrackItem(
-          id: '${prefix}_taylor_swift_2',
-          title: 'Taylor Swift',
-          artist: 'Taylor Swift',
-          assetPath: _taylorSwiftAssetPath,
-          playsCount: '98,410,120',
-        );
-      }
-      final int playNum = (71 - i * 4).clamp(1, 99).toInt();
-      return TrackItem(
-        id: '${prefix}_track_$i',
-        title: i == 0 ? 'Karol G (Hit Single)' : 'Track ${i + 1} ($prefix)',
-        artist: i == 0 ? 'Karol G, Judeline, rusowsky' : artistName,
-        assetPath: _bundledAssetPath,
-        playsCount: '$playNum,297,233',
+  TrackItem _karolTrack(String idPrefix) => TrackItem(
+        id: '${idPrefix}_karol_g',
+        title: 'Karol G (Hit Single)',
+        artist: 'Karol G, Judeline, rusowsky',
+        assetPath: _karolAssetPath,
+        playsCount: '71,297,233',
       );
-    });
-  }
+
+  TrackItem _taylorTrack(String idPrefix) => TrackItem(
+        id: '${idPrefix}_taylor_swift',
+        title: 'Taylor Swift',
+        artist: 'Taylor Swift',
+        assetPath: _taylorAssetPath,
+        playsCount: '98,410,120',
+      );
 
   void _buildCatalogData() {
     final shortcutNames = [
@@ -824,18 +939,21 @@ class _MainTabScreenState extends State<MainTabScreen>
     ];
 
     _top8Shortcuts = List.generate(8, (i) {
+      List<TrackItem> tracks = [];
+      if (i == 1) {
+        tracks = [_karolTrack('shortcut_1')];
+      } else if (i == 3) {
+        tracks = [_taylorTrack('shortcut_3')];
+      }
       return BoxModel(
         id: 'shortcut_$i',
         name: shortcutNames[i],
         subtitle: i == 0 ? 'Tap to Search' : 'Curated Mix',
-        description: 'Quick access to ${shortcutNames[i]} and top tracks.',
+        description:
+            'Quick shortcut for ${shortcutNames[i]} — ready to expand with your tracks.',
         colorValue: i % 2 == 1 ? 0xFF000000 : _palette[i % _palette.length],
         useGreenMusicLogo: i % 2 == 1,
-        tracks: _generateSampleTracks(
-          shortcutNames[i],
-          i == 0 ? 'Karol G' : 'Iqbal',
-          includeTaylorSecond: i == 1,
-        ),
+        tracks: tracks,
       );
     });
 
@@ -852,7 +970,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     ];
     final artistNames = [
       'Karol G',
-      'Arjan Dhillon',
+      'Taylor Swift',
       'Sidhu Moose Wala',
       'Prem Dhillon',
       'Arijit Singh',
@@ -868,34 +986,42 @@ class _MainTabScreenState extends State<MainTabScreen>
       for (int l = 0; l < 4; l++) {
         final lineTitle = lineTitles[boxLineCounter % lineTitles.length];
         final int currentLineIdx = boxLineCounter;
-        final bool isFirstBoxInFirstLine = cycle == 0 && l == 0;
+        final bool isFirstLine = cycle == 0 && l == 0;
         _homeSections.add(
           HomeSection(
             id: 'box_line_${cycle}_$l',
             type: HomeSectionType.boxLine,
             title: lineTitle,
             boxes: List.generate(10, (b) {
-              final boxName = isFirstBoxInFirstLine && b == 0
+              final bool isFirstBox = isFirstLine && b == 0;
+              final bool isSecondBox = isFirstLine && b == 1;
+              final boxName = isFirstBox
                   ? 'Karol G Hits'
-                  : '$lineTitle #${b + 1}';
+                  : isSecondBox
+                      ? 'Taylor Swift Spotlight'
+                      : '$lineTitle #${b + 1}';
               final int artistIdx =
                   ((currentLineIdx + b) % artistNames.length).toInt();
               final artist = artistNames[artistIdx];
               final int colorIdx =
                   ((currentLineIdx + b) % _palette.length).toInt();
-              final bool greenLogo = (b + currentLineIdx) % 3 == 1;
+
+              List<TrackItem> boxTracks = [];
+              if (isFirstBox) {
+                boxTracks = [_karolTrack('first_box')];
+              } else if (isSecondBox) {
+                boxTracks = [_taylorTrack('second_box')];
+              }
+
               return BoxModel(
                 id: 'box_${cycle}_${l}_$b',
                 name: boxName,
                 subtitle: b % 2 == 0 ? 'Album • $artist' : 'Playlist',
-                description: 'The latest & grandest hits. Cover: $artist',
-                colorValue: greenLogo ? 0xFF000000 : _palette[colorIdx],
-                useGreenMusicLogo: greenLogo,
-                tracks: _generateSampleTracks(
-                  boxName,
-                  artist,
-                  includeTaylorSecond: isFirstBoxInFirstLine && b == 0,
-                ),
+                description:
+                    'Customizable box template — add your own tracks or connect them from the repository anytime.',
+                colorValue: _palette[colorIdx],
+                useGreenMusicLogo: false,
+                tracks: boxTracks,
               );
             }),
           ),
@@ -916,12 +1042,18 @@ class _MainTabScreenState extends State<MainTabScreen>
             final name = artistNames[artistIdx];
             final int listeners = (893 - c * 45).clamp(100, 999).toInt();
             final int colorIdx = ((c + cycle + 2) % _palette.length).toInt();
+            List<TrackItem> artistTracks = [];
+            if (name == 'Karol G' && cycle == 0) {
+              artistTracks = [_karolTrack('artist_karol')];
+            } else if (name == 'Taylor Swift' && cycle == 0) {
+              artistTracks = [_taylorTrack('artist_taylor')];
+            }
             return CircleItem(
               id: 'artist_${cycle}_$c',
               name: name,
               monthlyListeners: '${listeners}K monthly listeners',
               colorValue: _palette[colorIdx],
-              popularTracks: _generateSampleTracks(name, name),
+              popularTracks: artistTracks,
             );
           }),
         ),
@@ -935,36 +1067,76 @@ class _MainTabScreenState extends State<MainTabScreen>
           title: 'Featured Episode',
           video: FeaturedVideoModel(
             id: 'vid_${cycle}_1',
-            bannerHeadline: cycle == 0 ? 'Karol G Live' : 'Patandar',
+            bannerHeadline: cycle == 0 ? 'Karol G Live' : 'Taylor Swift',
             title: cycle == 0
                 ? 'Karol G Global Tour Visualizer & Audio'
-                : 'Deep Focus & Behind The Beats',
-            channel: cycle == 0 ? 'Karol G' : 'Psyphoria',
+                : 'Taylor Swift Acoustic & Studio Session',
+            channel: cycle == 0 ? 'Karol G' : 'Taylor Swift',
             meta: 'Nov 19 • 240K+ plays',
             durationLabel: '27:11',
             colorValue: cycle == 0 ? 0xFFE8115B : 0xFF1B4D3E,
-            audioTrack: TrackItem(
-              id: 'vid_track_${cycle}_1',
-              title: 'Karol G Special Podcast & Audio Mix',
-              artist: 'Karol G',
-              assetPath: _bundledAssetPath,
-            ),
+            audioTrack: cycle == 0
+                ? _karolTrack('vid_0')
+                : _taylorTrack('vid_1'),
           ),
         ),
       );
     }
   }
 
+  Future<void> _handleNotificationAction(String? actionId) async {
+    if (actionId == null) return;
+    switch (actionId) {
+      case 'prev_track':
+        _playPreviousInQueue();
+        break;
+      case 'rewind_10':
+        final target = Duration(
+            seconds: math.max(0, _audioPlayer.position.inSeconds - 10));
+        await _audioPlayer.seek(target);
+        if (_currentPlayingTrack != null) {
+          _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
+        }
+        break;
+      case 'pause_track':
+        await _audioPlayer.pause();
+        if (_currentPlayingTrack != null) {
+          _showNowPlayingNotification(_currentPlayingTrack!, false);
+        }
+        break;
+      case 'play_track':
+        await _audioPlayer.play();
+        if (_currentPlayingTrack != null) {
+          _showNowPlayingNotification(_currentPlayingTrack!, true);
+        }
+        break;
+      case 'forward_10':
+        final totalMs = _audioPlayer.duration?.inMilliseconds ??
+            _duration.inMilliseconds;
+        final targetMs = math.min(
+            totalMs > 0 ? totalMs : 180000,
+            _audioPlayer.position.inMilliseconds + 10000);
+        await _audioPlayer.seek(Duration(milliseconds: targetMs));
+        if (_currentPlayingTrack != null) {
+          _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
+        }
+        break;
+      case 'next_track':
+        _playNextInQueue();
+        break;
+    }
+  }
+
   Future<void> _showNowPlayingNotification(TrackItem track, bool playing) async {
     if (!widget.settings.pushNotifications) return;
     try {
-      final isLiked = _isLiked(track);
       final posSec = _position.inSeconds;
       final durSec = _duration.inSeconds > 0 ? _duration.inSeconds : 180;
       final androidDetails = AndroidNotificationDetails(
         'music_playback_channel',
         'Now Playing Controls',
-        channelDescription: 'Playback controls for currently playing song',
+        channelDescription:
+            'Playback controls for currently playing song (prev, seek, play/pause, next)',
         importance: Importance.low,
         priority: Priority.low,
         ongoing: playing,
@@ -973,20 +1145,31 @@ class _MainTabScreenState extends State<MainTabScreen>
         maxProgress: durSec,
         progress: posSec.clamp(0, durSec),
         subText:
-            '${_formatDuration(_position)} / ${_formatDuration(_duration)} • ${isLiked ? "Liked ♥" : "Tap to open"}',
+            '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
         actions: <AndroidNotificationAction>[
-          const AndroidNotificationAction('prev_track', 'Prev',
-              showsUserInterface: true),
-          AndroidNotificationAction(
-            playing ? 'pause_track' : 'play_track',
-            playing ? 'Stop / Pause' : 'Start / Play',
+          const AndroidNotificationAction(
+            'prev_track',
+            '⏮',
             showsUserInterface: true,
           ),
-          const AndroidNotificationAction('next_track', 'Next',
-              showsUserInterface: true),
+          const AndroidNotificationAction(
+            'rewind_10',
+            '⏪ -10s',
+            showsUserInterface: true,
+          ),
           AndroidNotificationAction(
-            'like_track',
-            isLiked ? 'Unlike' : 'Like ♥',
+            playing ? 'pause_track' : 'play_track',
+            playing ? '⏸' : '▶',
+            showsUserInterface: true,
+          ),
+          const AndroidNotificationAction(
+            'forward_10',
+            '+10s ⏩',
+            showsUserInterface: true,
+          ),
+          const AndroidNotificationAction(
+            'next_track',
+            '⏭',
             showsUserInterface: true,
           ),
         ],
@@ -1009,7 +1192,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v9.json');
+    return File('${dir.path}/music_app_persistent_v10.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -1211,8 +1394,10 @@ class _MainTabScreenState extends State<MainTabScreen>
       final next = _playbackQueue.removeAt(0);
       _playTrack(next, openModal: false);
     } else if (_currentPlayingTrack != null) {
-      _audioPlayer.seek(Duration.zero);
-      _audioPlayer.play();
+      final alternate = _currentPlayingTrack!.assetPath == _karolAssetPath
+          ? _taylorTrack('next_auto')
+          : _karolTrack('next_auto');
+      _playTrack(alternate, openModal: false);
     }
   }
 
@@ -1304,6 +1489,137 @@ class _MainTabScreenState extends State<MainTabScreen>
       ),
       child: CustomPaint(
         painter: _GreenMusicLogoPainter(),
+      ),
+    );
+  }
+
+  Widget _buildCircleDotBoxTile(
+      {required int colorValue, double size = 48, double radius = 8}) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: Color(colorValue),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: Center(
+        child: CustomPaint(
+          size: Size(size * 0.46, size * 0.46),
+          painter: _CircleDotLogoPainter(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrackPlayingEqualizerBars(TrackItem track) {
+    final isThisPlaying =
+        _isPlaying && _currentPlayingTrack?.id == track.id;
+    if (!isThisPlaying) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      animation: _beatAnimController,
+      builder: (context, _) {
+        final t = _beatAnimController.value;
+        final heights = [
+          (6 + 10 * ((math.sin(t * math.pi * 2) + 1) / 2)).toDouble(),
+          (6 + 10 * ((math.sin(t * math.pi * 2 + 1.8) + 1) / 2)).toDouble(),
+          (6 + 10 * ((math.sin(t * math.pi * 2 + 3.6) + 1) / 2)).toDouble(),
+        ];
+        return Container(
+          margin: const EdgeInsets.only(right: 8),
+          width: 18,
+          height: 18,
+          alignment: Alignment.bottomCenter,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: heights
+                .map((h) => Container(
+                      width: 4,
+                      height: h,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1DB954),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ))
+                .toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBuyerFriendlyEmptyBoxView(BoxModel box, bool isLight) {
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildCircleDotBoxTile(
+              colorValue: box.colorValue, size: 76, radius: 16),
+          const SizedBox(height: 18),
+          Text(
+            '${box.name} is ready for your tracks',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: isLight ? Colors.black : Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'This box is intentionally clean so you can plug in songs directly from your repository or backend without extra clutter. Demo tracks are included in the first two boxes.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: isLight ? Colors.black54 : Colors.white60,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  AvatarPreset _resolveAvatarPreset(String avatarId) {
+    return _avatarPresets.firstWhere(
+      (a) => a.id == avatarId,
+      orElse: () => _avatarPresets.first,
+    );
+  }
+
+  Widget _buildPresetAvatarCircle(AvatarPreset preset,
+      {double radius = 32, bool selected = false}) {
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [preset.bgStart, preset.bgEnd],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: selected ? Colors.white : Colors.white24,
+          width: selected ? 3 : 1.5,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(preset.icon, color: Colors.white, size: radius * 0.68),
+          Text(
+            preset.badgeText,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: (radius * 0.25).clamp(7, 11),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2053,20 +2369,10 @@ class _MainTabScreenState extends State<MainTabScreen>
                           child: Center(
                             child: Hero(
                               tag: 'box_${box.id}',
-                              child: box.useGreenMusicLogo
-                                  ? _buildGreenMusicLogoTile(
-                                      size: 160, radius: 14)
-                                  : Container(
-                                      width: 160,
-                                      height: 160,
-                                      decoration: BoxDecoration(
-                                        color: Color(box.colorValue),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: const Center(
-                                          child: Icon(Icons.album,
-                                              size: 70, color: Colors.white)),
-                                    ),
+                              child: _buildCircleDotBoxTile(
+                                  colorValue: box.colorValue,
+                                  size: 160,
+                                  radius: 14),
                             ),
                           ),
                         ),
@@ -2091,144 +2397,158 @@ class _MainTabScreenState extends State<MainTabScreen>
                                         ? Colors.black54
                                         : Colors.white70,
                                     fontSize: 13)),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.arrow_circle_down_outlined,
-                                      size: 30,
-                                      color: isLight
-                                          ? Colors.black54
-                                          : Colors.white70),
-                                  onPressed: () {
-                                    for (var t in visibleTracks) {
-                                      _downloadTrack(t);
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.share,
-                                      size: 26,
-                                      color: isLight
-                                          ? Colors.black54
-                                          : Colors.white70),
-                                  onPressed: () =>
-                                      Share.share('Listen to ${box.name}'),
-                                ),
-                                const Spacer(),
-                                GestureDetector(
-                                  onTap: () {
-                                    if (visibleTracks.isNotEmpty) {
+                            if (visibleTracks.isNotEmpty) ...[
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.arrow_circle_down_outlined,
+                                        size: 30,
+                                        color: isLight
+                                            ? Colors.black54
+                                            : Colors.white70),
+                                    onPressed: () {
+                                      for (var t in visibleTracks) {
+                                        _downloadTrack(t);
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.share,
+                                        size: 26,
+                                        color: isLight
+                                            ? Colors.black54
+                                            : Colors.white70),
+                                    onPressed: () =>
+                                        Share.share('Listen to ${box.name}'),
+                                  ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () {
                                       _playTrack(visibleTracks.first,
                                           queue: visibleTracks,
                                           openModal: true);
-                                    }
-                                  },
-                                  child: Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: const BoxDecoration(
-                                        color: Color(0xFF1DB954),
-                                        shape: BoxShape.circle),
-                                    child: const Icon(Icons.play_arrow,
-                                        color: Colors.black, size: 32),
+                                    },
+                                    child: Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: const BoxDecoration(
+                                          color: Color(0xFF1DB954),
+                                          shape: BoxShape.circle),
+                                      child: const Icon(Icons.play_arrow,
+                                          color: Colors.black, size: 32),
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
                     ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final track = visibleTracks[index];
-                          final liked = _isLiked(track);
-                          final inPlaylist = _isInPlaylist(track);
-                          return ListTile(
-                            leading: box.useGreenMusicLogo
-                                ? _buildGreenMusicLogoTile(size: 46, radius: 6)
-                                : Container(
-                                    width: 46,
-                                    height: 46,
-                                    decoration: BoxDecoration(
-                                      color: Color(box.colorValue)
-                                          .withOpacity(0.8),
-                                      borderRadius: BorderRadius.circular(4),
+                    if (visibleTracks.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: _buildBuyerFriendlyEmptyBoxView(box, isLight),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final track = visibleTracks[index];
+                            final liked = _isLiked(track);
+                            final inPlaylist = _isInPlaylist(track);
+                            return ListTile(
+                              leading: _buildCircleDotBoxTile(
+                                  colorValue: box.colorValue,
+                                  size: 46,
+                                  radius: 6),
+                              title: Row(
+                                children: [
+                                  _buildTrackPlayingEqualizerBars(track),
+                                  Expanded(
+                                    child: Text(
+                                      track.title,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: (_isPlaying &&
+                                                _currentPlayingTrack?.id ==
+                                                    track.id)
+                                            ? const Color(0xFF1DB954)
+                                            : (isLight
+                                                ? Colors.black
+                                                : Colors.white),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    child: const Icon(Icons.music_note,
-                                        color: Colors.white),
                                   ),
-                            title: Text(track.title,
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color:
-                                        isLight ? Colors.black : Colors.white),
-                                maxLines: 1),
-                            subtitle: Text(track.artist,
-                                style: TextStyle(
-                                    color: isLight
-                                        ? Colors.black54
-                                        : Colors.white60)),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(
-                                    inPlaylist
-                                        ? Icons.check_circle
-                                        : Icons.playlist_add,
-                                    color: inPlaylist
-                                        ? const Color(0xFF1DB954)
-                                        : (isLight
-                                            ? Colors.black45
-                                            : Colors.white54),
-                                    size: 22,
-                                  ),
-                                  onPressed: () {
-                                    _addToPlaylist(track);
-                                    setPageState(() {});
-                                  },
-                                ),
-                                IconButton(
-                                  icon: AnimatedRotation(
-                                    turns: liked ? 1.0 : 0.0,
-                                    duration: const Duration(milliseconds: 300),
-                                    child: Icon(
-                                      liked
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      color: liked
-                                          ? Colors.redAccent
+                                ],
+                              ),
+                              subtitle: Text(track.artist,
+                                  style: TextStyle(
+                                      color: isLight
+                                          ? Colors.black54
+                                          : Colors.white60)),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: Icon(
+                                      inPlaylist
+                                          ? Icons.check_circle
+                                          : Icons.playlist_add,
+                                      color: inPlaylist
+                                          ? const Color(0xFF1DB954)
                                           : (isLight
                                               ? Colors.black45
                                               : Colors.white54),
                                       size: 22,
                                     ),
+                                    onPressed: () {
+                                      _addToPlaylist(track);
+                                      setPageState(() {});
+                                    },
                                   ),
-                                  onPressed: () {
-                                    _toggleLike(track);
-                                    setPageState(() {});
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.more_vert,
-                                      color: isLight
-                                          ? Colors.black45
-                                          : Colors.white60),
-                                  onPressed: () => _openTrack3DotsMenu(track,
-                                      onHide: () => setPageState(() {})),
-                                ),
-                              ],
-                            ),
-                            onTap: () => _playTrack(track,
-                                queue: visibleTracks, openModal: true),
-                          );
-                        },
-                        childCount: visibleTracks.length,
+                                  IconButton(
+                                    icon: AnimatedRotation(
+                                      turns: liked ? 1.0 : 0.0,
+                                      duration:
+                                          const Duration(milliseconds: 300),
+                                      child: Icon(
+                                        liked
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
+                                        color: liked
+                                            ? Colors.redAccent
+                                            : (isLight
+                                                ? Colors.black45
+                                                : Colors.white54),
+                                        size: 22,
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      _toggleLike(track);
+                                      setPageState(() {});
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.more_vert,
+                                        color: isLight
+                                            ? Colors.black45
+                                            : Colors.white60),
+                                    onPressed: () => _openTrack3DotsMenu(track,
+                                        onHide: () => setPageState(() {})),
+                                  ),
+                                ],
+                              ),
+                              onTap: () => _playTrack(track,
+                                  queue: visibleTracks, openModal: true),
+                            );
+                          },
+                          childCount: visibleTracks.length,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               );
@@ -2316,24 +2636,23 @@ class _MainTabScreenState extends State<MainTabScreen>
                                       Text(isFollowing ? 'Following' : 'Follow'),
                                 ),
                                 const Spacer(),
-                                GestureDetector(
-                                  onTap: () {
-                                    if (artist.popularTracks.isNotEmpty) {
+                                if (artist.popularTracks.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () {
                                       _playTrack(artist.popularTracks.first,
                                           queue: artist.popularTracks,
                                           openModal: true);
-                                    }
-                                  },
-                                  child: Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: const BoxDecoration(
-                                        color: Color(0xFF1DB954),
-                                        shape: BoxShape.circle),
-                                    child: const Icon(Icons.play_arrow,
-                                        color: Colors.black, size: 32),
+                                    },
+                                    child: Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: const BoxDecoration(
+                                          color: Color(0xFF1DB954),
+                                          shape: BoxShape.circle),
+                                      child: const Icon(Icons.play_arrow,
+                                          color: Colors.black, size: 32),
+                                    ),
                                   ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -2347,34 +2666,64 @@ class _MainTabScreenState extends State<MainTabScreen>
                         ),
                       ),
                     ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final track = artist.popularTracks[index];
-                          return ListTile(
-                            leading: Text('${index + 1}',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        isLight ? Colors.black : Colors.white)),
-                            title: Text(track.title,
-                                style: TextStyle(
-                                    color:
-                                        isLight ? Colors.black : Colors.white),
-                                maxLines: 1),
-                            subtitle: Text(track.playsCount,
-                                style: TextStyle(
-                                    color: isLight
-                                        ? Colors.black54
-                                        : Colors.white60)),
-                            onTap: () => _playTrack(track,
-                                queue: artist.popularTracks, openModal: true),
-                          );
-                        },
-                        childCount: artist.popularTracks.length,
+                    if (artist.popularTracks.isEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Artist catalog slot ready — add tracks from your repository anytime.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color:
+                                    isLight ? Colors.black54 : Colors.white60),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final track = artist.popularTracks[index];
+                            return ListTile(
+                              leading: Text('${index + 1}',
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isLight
+                                          ? Colors.black
+                                          : Colors.white)),
+                              title: Row(
+                                children: [
+                                  _buildTrackPlayingEqualizerBars(track),
+                                  Expanded(
+                                    child: Text(
+                                      track.title,
+                                      style: TextStyle(
+                                        color: (_isPlaying &&
+                                                _currentPlayingTrack?.id ==
+                                                    track.id)
+                                            ? const Color(0xFF1DB954)
+                                            : (isLight
+                                                ? Colors.black
+                                                : Colors.white),
+                                      ),
+                                      maxLines: 1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Text(track.playsCount,
+                                  style: TextStyle(
+                                      color: isLight
+                                          ? Colors.black54
+                                          : Colors.white60)),
+                              onTap: () => _playTrack(track,
+                                  queue: artist.popularTracks, openModal: true),
+                            );
+                          },
+                          childCount: artist.popularTracks.length,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               );
@@ -2892,20 +3241,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                     children: [
                       Hero(
                         tag: 'box_${box.id}',
-                        child: box.useGreenMusicLogo
-                            ? _buildGreenMusicLogoTile(size: 136, radius: 8)
-                            : Container(
-                                height: 136,
-                                width: 136,
-                                decoration: BoxDecoration(
-                                  color: Color(box.colorValue),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Center(
-                                  child: Icon(Icons.album,
-                                      size: 52, color: Colors.white70),
-                                ),
-                              ),
+                        child: _buildCircleDotBoxTile(
+                            colorValue: box.colorValue, size: 136, radius: 8),
                       ),
                       const SizedBox(height: 6),
                       Text(box.name,
@@ -3113,9 +3450,22 @@ class _MainTabScreenState extends State<MainTabScreen>
         final track = trackList[index];
         return ListTile(
           leading: _buildGreenMusicLogoTile(size: 48, radius: 6),
-          title: Text(track.title,
-              style: TextStyle(color: isLight ? Colors.black : Colors.white),
-              maxLines: 1),
+          title: Row(
+            children: [
+              _buildTrackPlayingEqualizerBars(track),
+              Expanded(
+                child: Text(
+                  track.title,
+                  style: TextStyle(
+                    color: (_isPlaying && _currentPlayingTrack?.id == track.id)
+                        ? const Color(0xFF1DB954)
+                        : (isLight ? Colors.black : Colors.white),
+                  ),
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
           subtitle: Text(track.artist,
               style:
                   TextStyle(color: isLight ? Colors.black54 : Colors.white60)),
@@ -3668,6 +4018,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     final birthdayCtrl = TextEditingController(text: _profile.birthday);
     final cityCtrl = TextEditingController(text: _profile.city);
     final addressCtrl = TextEditingController(text: _profile.address);
+    String selectedAvatarId = _profile.avatarId;
 
     bool errFirst = false;
     bool errLast = false;
@@ -3682,6 +4033,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setFormState) {
+            final activePreset = _resolveAvatarPreset(selectedAvatarId);
             InputDecoration buildFieldDeco(String label, bool hasError) {
               return InputDecoration(
                 labelText: label,
@@ -3721,9 +4073,33 @@ class _MainTabScreenState extends State<MainTabScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Create Your Profile',
+                    const Text('Create Profile',
                         style: TextStyle(
                             fontSize: 22, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 14),
+                    Center(
+                      child: _buildPresetAvatarCircle(activePreset,
+                          radius: 44, selected: true),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 76,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _avatarPresets.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (context, idx) {
+                          final preset = _avatarPresets[idx];
+                          final isSel = preset.id == selectedAvatarId;
+                          return GestureDetector(
+                            onTap: () => setFormState(
+                                () => selectedAvatarId = preset.id),
+                            child: _buildPresetAvatarCircle(preset,
+                                radius: 34, selected: isSel),
+                          );
+                        },
+                      ),
+                    ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: firstCtrl,
@@ -3799,6 +4175,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                             _profile.birthday = birthdayCtrl.text.trim();
                             _profile.city = cityCtrl.text.trim();
                             _profile.address = addressCtrl.text.trim();
+                            _profile.avatarId = selectedAvatarId;
                             _profile.isCreated = true;
                           });
                           _savePersistentState();
@@ -3869,6 +4246,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     final isLight = widget.settings.themeMode == 'Light';
     final frame = _currentFrame;
     final badge = _currentBadge;
+    final avatarPreset = _resolveAvatarPreset(_profile.avatarId);
     final isGoldFrame = frame.tier == 'Gold';
     final isDiamondFrame = frame.tier == 'Diamond';
     final double shineBlur = isDiamondFrame
@@ -3926,17 +4304,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                     ),
                   ),
                 ),
-                CircleAvatar(
-                  radius: 66,
-                  backgroundColor: const Color(0xFF5B9BD5),
-                  child: Text(
-                    _profile.initialLetter,
-                    style: const TextStyle(
-                        fontSize: 52,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black),
-                  ),
-                ),
+                _buildPresetAvatarCircle(avatarPreset,
+                    radius: 66, selected: true),
                 Positioned(
                   bottom: 18,
                   right: 22,
@@ -4361,6 +4730,29 @@ class _DecorativeFiligreeFramePainter extends CustomPainter {
         oldDelegate.isGold != isGold ||
         oldDelegate.isDiamond != isDiamond;
   }
+}
+
+class _CircleDotLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) * 0.42;
+
+    final circlePaint = Paint()
+      ..color = Colors.white.withOpacity(0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(1.8, radius * 0.14);
+
+    final dotPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    canvas.drawCircle(center, radius, circlePaint);
+    canvas.drawCircle(center, math.max(2.2, radius * 0.24), dotPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _GreenMusicLogoPainter extends CustomPainter {
