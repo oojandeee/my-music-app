@@ -25,7 +25,7 @@ Future<void> _ensureAudioServiceInitialized() async {
         androidNotificationChannelId: 'com.musicflow.brown_playback.channel',
         androidNotificationChannelName: 'Music Flow Now Playing',
         androidNotificationOngoing: true,
-        androidStopForegroundOnPause: false,
+        androidStopForegroundOnPause: true,
         notificationColor: Color(0xFF5D3A1A),
       ),
     );
@@ -1176,15 +1176,12 @@ class _MainTabScreenState extends State<MainTabScreen>
     }
   }
 
-  /// Detects if the user manually moved the device clock backward or jumped
-  /// wildly into the future to cheat daily rewards/missions.
   bool _checkClockIntegrity() {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     if (_maxObservedEpochMs > 0 && nowMs < _maxObservedEpochMs - 120000) {
       _clockTamperedDetected = true;
     } else if (_maxObservedEpochMs > 0 &&
         nowMs - _maxObservedEpochMs > 1000 * 60 * 60 * 48) {
-      // Clock jumped ahead by more than 48 hours without normal session progression
       _clockTamperedDetected = true;
     }
     if (nowMs > _maxObservedEpochMs) {
