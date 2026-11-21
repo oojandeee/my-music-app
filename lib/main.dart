@@ -2,22 +2,138 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-final FlutterLocalNotificationsPlugin _notifsPlugin =
-    FlutterLocalNotificationsPlugin();
+late _MusicAudioHandler _audioHandler;
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-  await _notifsPlugin.initialize(
-    const InitializationSettings(android: androidInit),
+  _audioHandler = await AudioService.init(
+    builder: () => _MusicAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.musicstream.playback.channel',
+      androidNotificationChannelName: 'Now Playing',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: true,
+    ),
   );
   runApp(const MyApp());
+}
+
+class _MusicAudioHandler extends BaseAudioHandler
+    with QueueHandler, SeekHandler {
+  final AudioPlayer player = AudioPlayer();
+  void Function()? onSkipNextCallback;
+  void Function()? onSkipPreviousCallback;
+  void Function(bool playing)? onPlayingChanged;
+
+  _MusicAudioHandler() {
+    player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    player.playingStream.listen((playing) {
+      onPlayingChanged?.call(playing);
+    });
+  }
+
+  PlaybackState _transformEvent(PlaybackEvent event) {
+    final playing = player.playing;
+    return PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        MediaControl.rewind,
+        playing ? MediaControl.pause : MediaControl.play,
+        MediaControl.fastForward,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 2, 4],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[player.processingState]!,
+      playing: playing,
+      updatePosition: player.position,
+      bufferedPosition: player.bufferedPosition,
+      speed: player.speed,
+      queueIndex: event.currentIndex,
+    );
+  }
+
+  Future<Duration?> playAssetTrack({
+    required String id,
+    required String title,
+    required String artist,
+    required String assetPath,
+    required double volume,
+  }) async {
+    mediaItem.add(
+      MediaItem(
+        id: id,
+        title: title,
+        artist: artist,
+        album: 'Music Stream',
+        duration: const Duration(minutes: 3),
+      ),
+    );
+    await player.stop();
+    await player.setVolume(volume.clamp(0.0, 1.0));
+    final dur = await player.setAsset(assetPath);
+    if (dur != null) {
+      mediaItem.add(mediaItem.value?.copyWith(duration: dur));
+    }
+    unawaited(player.play());
+    return dur;
+  }
+
+  @override
+  Future<void> play() async {
+    await player.play();
+  }
+
+  @override
+  Future<void> pause() async {
+    await player.pause();
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    await player.seek(position);
+  }
+
+  @override
+  Future<void> rewind() async {
+    final target =
+        Duration(seconds: math.max(0, player.position.inSeconds - 10));
+    await player.seek(target);
+  }
+
+  @override
+  Future<void> fastForward() async {
+    final totalMs = player.duration?.inMilliseconds ?? 180000;
+    final targetMs =
+        math.min(totalMs, player.position.inMilliseconds + 10000);
+    await player.seek(Duration(milliseconds: targetMs));
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    onSkipNextCallback?.call();
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    onSkipPreviousCallback?.call();
+  }
 }
 
 // ============================================================================
@@ -178,20 +294,13 @@ class UserProfileData {
     this.birthday = '',
     this.city = '',
     this.address = '',
-    this.avatarId = 'avatar_kids',
+    this.avatarId = 'avatar_lion_real',
     this.isCreated = false,
   });
 
   String get displayName {
     final full = '$firstName $lastName'.trim();
     return full.isEmpty ? 'Music Lover' : full;
-  }
-
-  String get initialLetter {
-    if (firstName.trim().isNotEmpty) {
-      return firstName.trim()[0].toUpperCase();
-    }
-    return 'G';
   }
 
   Map<String, dynamic> toJson() => {
@@ -211,7 +320,7 @@ class UserProfileData {
         birthday: (json['birthday'] ?? json['email'] ?? '').toString(),
         city: (json['city'] ?? '').toString(),
         address: (json['address'] ?? '').toString(),
-        avatarId: (json['avatarId'] ?? 'avatar_kids').toString(),
+        avatarId: (json['avatarId'] ?? 'avatar_lion_real').toString(),
         isCreated: json['isCreated'] == true,
       );
 }
@@ -393,10 +502,15 @@ class MainTabScreen extends StatefulWidget {
 }
 
 class _MainTabScreenState extends State<MainTabScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   int _currentTabIndex = 0;
+  int _previousTabIndex = 0;
+  int? _arcFromTabIndex;
+  int? _arcToTabIndex;
+  late final AnimationController _tabArcController;
+
   String _selectedCategoryFilter = 'All';
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  AudioPlayer get _audioPlayer => _audioHandler.player;
   Timer? _listeningTrackerTimer;
   late final AnimationController _beatAnimController;
 
@@ -410,7 +524,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   Set<String> _excludedTrackIds = {};
 
   UserProfileData _profile = UserProfileData();
-  int _coins = 50;
+  int _coins = 40;
   int _totalExp = 0;
   int _listeningStreak = 1;
   int _previousStreakBeforeLoss = 0;
@@ -420,10 +534,11 @@ class _MainTabScreenState extends State<MainTabScreen>
   int _streakSaverTokens = 1;
   DateTime? _doubleExpEndTime;
 
-  int _totalSongsListened = 0;
+  int _completedSongsCount = 0;
   int _totalUsageMinutes = 23;
   int _currentTrackSecondsListened = 0;
   int _lastAwardedMinuteBlock = 0;
+  bool _countedCurrentSongCompletion = false;
   Set<String> _claimedMissionIds = {};
 
   Set<String> _ownedCosmeticIds = {'badge_wood', 'frame_wood'};
@@ -443,100 +558,84 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   static const List<AvatarPreset> _avatarPresets = [
     AvatarPreset(
-      id: 'avatar_kids',
-      label: 'Kids',
-      bgStart: Color(0xFF7C3AED),
-      bgEnd: Color(0xFFEC4899),
-      badgeText: 'KIDS',
-      icon: Icons.child_care,
-    ),
-    AvatarPreset(
-      id: 'avatar_spider',
-      label: 'Spider',
-      bgStart: Color(0xFFDC2626),
-      bgEnd: Color(0xFF1E3A8A),
-      badgeText: 'SPIDER',
-      icon: Icons.flash_on,
-    ),
-    AvatarPreset(
-      id: 'avatar_buzz',
-      label: 'Space',
-      bgStart: Color(0xFF16A34A),
-      bgEnd: Color(0xFF6D28D9),
-      badgeText: 'SPACE',
-      icon: Icons.rocket_launch,
-    ),
-    AvatarPreset(
-      id: 'avatar_mirabel',
-      label: 'Mirabel',
-      bgStart: Color(0xFF8B5CF6),
-      bgEnd: Color(0xFFF472B6),
-      badgeText: 'STAR',
-      icon: Icons.auto_awesome,
-    ),
-    AvatarPreset(
-      id: 'avatar_iron',
-      label: 'Armor',
-      bgStart: Color(0xFFB91C1C),
-      bgEnd: Color(0xFFF59E0B),
-      badgeText: 'MK85',
-      icon: Icons.shield,
-    ),
-    AvatarPreset(
-      id: 'avatar_simba',
-      label: 'Lion',
-      bgStart: Color(0xFFD97706),
-      bgEnd: Color(0xFF78350F),
+      id: 'avatar_lion_real',
+      label: 'Roar Lion',
+      bgStart: Color(0xFFB45309),
+      bgEnd: Color(0xFF451A03),
       badgeText: 'LION',
       icon: Icons.pets,
     ),
     AvatarPreset(
-      id: 'avatar_smiley',
-      label: 'Smile',
-      bgStart: Color(0xFF0284C7),
-      bgEnd: Color(0xFF7C3AED),
-      badgeText: ':)',
-      icon: Icons.sentiment_satisfied_alt,
+      id: 'avatar_armor_hero',
+      label: 'Red Armor',
+      bgStart: Color(0xFFDC2626),
+      bgEnd: Color(0xFF991B1B),
+      badgeText: 'ARMOR',
+      icon: Icons.shield,
     ),
     AvatarPreset(
-      id: 'avatar_panda',
-      label: 'Panda',
-      bgStart: Color(0xFF334155),
-      bgEnd: Color(0xFF0F172A),
-      badgeText: 'PANDA',
+      id: 'avatar_web_hero',
+      label: 'Web Hero',
+      bgStart: Color(0xFF2563EB),
+      bgEnd: Color(0xFF991B1B),
+      badgeText: 'HERO',
+      icon: Icons.bolt,
+    ),
+    AvatarPreset(
+      id: 'avatar_boss_cat',
+      label: 'Boss Cat',
+      bgStart: Color(0xFF1F2937),
+      bgEnd: Color(0xFF090D16),
+      badgeText: 'BOSS',
       icon: Icons.cruelty_free,
     ),
     AvatarPreset(
-      id: 'avatar_moana',
-      label: 'Ocean',
-      bgStart: Color(0xFF0D9488),
-      bgEnd: Color(0xFF1D4ED8),
-      badgeText: 'WAVE',
-      icon: Icons.waves,
+      id: 'avatar_paris_tower',
+      label: 'Paris Night',
+      bgStart: Color(0xFF312E81),
+      bgEnd: Color(0xFFF59E0B),
+      badgeText: 'PARIS',
+      icon: Icons.location_city,
     ),
     AvatarPreset(
-      id: 'avatar_bart',
-      label: 'Bart',
-      bgStart: Color(0xFFFACC15),
-      bgEnd: Color(0xFFEA580C),
-      badgeText: 'BART',
-      icon: Icons.face,
+      id: 'avatar_cr7_art',
+      label: 'Star #7',
+      bgStart: Color(0xFFEA580C),
+      bgEnd: Color(0xFF7F1D1D),
+      badgeText: 'NO.7',
+      icon: Icons.sports_soccer,
     ),
     AvatarPreset(
-      id: 'avatar_baymax',
-      label: 'Care',
-      bgStart: Color(0xFFE2E8F0),
-      bgEnd: Color(0xFF64748B),
-      badgeText: 'BOT',
-      icon: Icons.favorite,
+      id: 'avatar_red_ronin',
+      label: 'Crimson Blade',
+      bgStart: Color(0xFF991B1B),
+      bgEnd: Color(0xFF111827),
+      badgeText: 'BLADE',
+      icon: Icons.whatshot,
     ),
     AvatarPreset(
-      id: 'avatar_grogu',
-      label: 'Force',
-      bgStart: Color(0xFF4D7C0F),
-      bgEnd: Color(0xFF1E293B),
-      badgeText: 'JEDI',
-      icon: Icons.spa,
+      id: 'avatar_wild_wolf',
+      label: 'Alpha Wolf',
+      bgStart: Color(0xFF334155),
+      bgEnd: Color(0xFF0F172A),
+      badgeText: 'WOLF',
+      icon: Icons.nightlight_round,
+    ),
+    AvatarPreset(
+      id: 'avatar_golden_eagle',
+      label: 'Sky Eagle',
+      bgStart: Color(0xFFD97706),
+      bgEnd: Color(0xFF1E3A8A),
+      badgeText: 'EAGLE',
+      icon: Icons.flight_takeoff,
+    ),
+    AvatarPreset(
+      id: 'avatar_space_ranger',
+      label: 'Star Ranger',
+      bgStart: Color(0xFF16A34A),
+      bgEnd: Color(0xFF5B21B6),
+      badgeText: 'ORBIT',
+      icon: Icons.rocket_launch,
     ),
   ];
 
@@ -574,7 +673,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Wood Badge',
       tier: 'Wood',
       type: 'badge',
-      cost: 20,
+      cost: 15,
       primaryColor: Color(0xFF8D5524),
       secondaryColor: Color(0xFF5C3818),
       icon: Icons.shield,
@@ -584,7 +683,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Iron Badge',
       tier: 'Iron',
       type: 'badge',
-      cost: 60,
+      cost: 35,
       primaryColor: Color(0xFF9CA3AF),
       secondaryColor: Color(0xFF4B5563),
       icon: Icons.security,
@@ -594,7 +693,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Silver Badge',
       tier: 'Silver',
       type: 'badge',
-      cost: 150,
+      cost: 75,
       primaryColor: Color(0xFFE5E7EB),
       secondaryColor: Color(0xFF9CA3AF),
       icon: Icons.verified,
@@ -604,7 +703,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Gold Badge',
       tier: 'Gold',
       type: 'badge',
-      cost: 350,
+      cost: 140,
       primaryColor: Color(0xFFFBBF24),
       secondaryColor: Color(0xFFB45309),
       icon: Icons.workspace_premium,
@@ -614,7 +713,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Diamond Badge',
       tier: 'Diamond',
       type: 'badge',
-      cost: 800,
+      cost: 240,
       primaryColor: Color(0xFF38BDF8),
       secondaryColor: Color(0xFF0284C7),
       icon: Icons.diamond,
@@ -624,7 +723,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Wood Frame',
       tier: 'Wood',
       type: 'frame',
-      cost: 30,
+      cost: 20,
       primaryColor: Color(0xFF8D5524),
       secondaryColor: Color(0xFF5C3818),
       icon: Icons.filter_vintage,
@@ -634,7 +733,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Iron Frame',
       tier: 'Iron',
       type: 'frame',
-      cost: 80,
+      cost: 45,
       primaryColor: Color(0xFF9CA3AF),
       secondaryColor: Color(0xFF4B5563),
       icon: Icons.filter_vintage,
@@ -644,7 +743,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Silver Frame',
       tier: 'Silver',
       type: 'frame',
-      cost: 180,
+      cost: 90,
       primaryColor: Color(0xFFF3F4F6),
       secondaryColor: Color(0xFF9CA3AF),
       icon: Icons.filter_vintage,
@@ -654,7 +753,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Floral Blossom Frame',
       tier: 'Flowers',
       type: 'frame',
-      cost: 280,
+      cost: 130,
       primaryColor: Color(0xFFF472B6),
       secondaryColor: Color(0xFFDB2777),
       icon: Icons.local_florist,
@@ -664,7 +763,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Royal Gold Frame',
       tier: 'Gold',
       type: 'frame',
-      cost: 450,
+      cost: 190,
       primaryColor: Color(0xFFFFD700),
       secondaryColor: Color(0xFFD97706),
       icon: Icons.auto_awesome,
@@ -674,7 +773,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       name: 'Eternal Diamond Frame',
       tier: 'Diamond',
       type: 'frame',
-      cost: 1000,
+      cost: 300,
       primaryColor: Color(0xFF67E8F9),
       secondaryColor: Color(0xFF818CF8),
       icon: Icons.diamond,
@@ -683,85 +782,85 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   static const List<MissionItem> _longTermMissions = [
     MissionItem(
+      id: 'm_songs_3',
+      title: 'First Full Spins',
+      description: 'Listen to 3 songs from start to finish',
+      metricType: 'songs',
+      targetValue: 3,
+      coinReward: 15,
+      expReward: 25,
+    ),
+    MissionItem(
       id: 'm_songs_10',
       title: 'Warming Up',
-      description: 'Listen to 10 songs completely or actively',
+      description: 'Complete 10 full songs in the app',
       metricType: 'songs',
       targetValue: 10,
-      coinReward: 100,
+      coinReward: 25,
+      expReward: 40,
+    ),
+    MissionItem(
+      id: 'm_mins_30',
+      title: 'Half-Hour Session',
+      description: 'Listen for 30 total minutes',
+      metricType: 'minutes',
+      targetValue: 30,
+      coinReward: 20,
+      expReward: 35,
+    ),
+    MissionItem(
+      id: 'm_songs_25',
+      title: 'Track Collector',
+      description: 'Complete 25 full songs',
+      metricType: 'songs',
+      targetValue: 25,
+      coinReward: 45,
+      expReward: 70,
+    ),
+    MissionItem(
+      id: 'm_mins_120',
+      title: 'Two-Hour Groove',
+      description: 'Reach 120 minutes of listening time',
+      metricType: 'minutes',
+      targetValue: 120,
+      coinReward: 60,
+      expReward: 95,
+    ),
+    MissionItem(
+      id: 'm_streak_7',
+      title: 'One-Week Streak',
+      description: 'Keep a 7-day listening streak',
+      metricType: 'streak',
+      targetValue: 7,
+      coinReward: 40,
+      expReward: 65,
+    ),
+    MissionItem(
+      id: 'm_songs_60',
+      title: 'Album Finisher',
+      description: 'Complete 60 full songs',
+      metricType: 'songs',
+      targetValue: 60,
+      coinReward: 85,
+      expReward: 130,
+    ),
+    MissionItem(
+      id: 'm_streak_21',
+      title: 'Three-Week Habit',
+      description: 'Maintain a 21-day listening streak',
+      metricType: 'streak',
+      targetValue: 21,
+      coinReward: 95,
       expReward: 150,
     ),
     MissionItem(
-      id: 'm_mins_50',
-      title: 'Dedicated Listener',
-      description: 'Use the app and listen for 50 minutes',
+      id: 'm_mins_500',
+      title: 'Sound Marathon',
+      description: 'Reach 500 minutes of total listening',
       metricType: 'minutes',
-      targetValue: 50,
-      coinReward: 150,
-      expReward: 250,
-    ),
-    MissionItem(
-      id: 'm_songs_50',
-      title: 'Music Enthusiast',
-      description: 'Listen to 50 songs across playlists & mixes',
-      metricType: 'songs',
-      targetValue: 50,
-      coinReward: 250,
-      expReward: 400,
-    ),
-    MissionItem(
-      id: 'm_songs_100',
-      title: 'Century Club',
-      description: 'Listen to 100 songs in the app',
-      metricType: 'songs',
-      targetValue: 100,
-      coinReward: 400,
-      expReward: 700,
-    ),
-    MissionItem(
-      id: 'm_mins_300',
-      title: '5-Hour Marathon',
-      description: 'Record 300 minutes of total listening time',
-      metricType: 'minutes',
-      targetValue: 300,
-      coinReward: 600,
-      expReward: 1000,
-    ),
-    MissionItem(
-      id: 'm_streak_14',
-      title: 'Two-Week Pyro',
-      description: 'Maintain a 14-day listening streak',
-      metricType: 'streak',
-      targetValue: 14,
-      coinReward: 500,
-      expReward: 900,
-    ),
-    MissionItem(
-      id: 'm_songs_500',
-      title: 'Audiophile Legend (Multi-Month)',
-      description: 'Listen to 500 songs over your journey',
-      metricType: 'songs',
       targetValue: 500,
-      coinReward: 1200,
-      expReward: 2500,
-    ),
-    MissionItem(
-      id: 'm_mins_1500',
-      title: '25-Hour Titan (Multi-Month)',
-      description: 'Listen to music & podcasts for 1,500 minutes',
-      metricType: 'minutes',
-      targetValue: 1500,
-      coinReward: 2000,
-      expReward: 4000,
-    ),
-    MissionItem(
-      id: 'm_streak_60',
-      title: '60-Day Unstoppable Streak',
-      description: 'Keep your fire streak alive for 60 days',
-      metricType: 'streak',
-      targetValue: 60,
-      coinReward: 2500,
-      expReward: 5000,
+      coinReward: 120,
+      expReward: 190,
     ),
   ];
 
@@ -770,13 +869,45 @@ class _MainTabScreenState extends State<MainTabScreen>
     super.initState();
     _beatAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 650),
+      duration: const Duration(milliseconds: 550),
     )..repeat(reverse: true);
+    _tabArcController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() {
+            _arcFromTabIndex = null;
+            _arcToTabIndex = null;
+          });
+        }
+      });
+
+    _audioHandler.onSkipNextCallback = _playNextInQueue;
+    _audioHandler.onSkipPreviousCallback = _playPreviousInQueue;
+    _audioHandler.onPlayingChanged = (playing) {
+      if (mounted) {
+        setState(() => _isPlaying = playing);
+      }
+    };
+
     _buildCatalogData();
     _loadPersistentState();
     _initAudioListeners();
     _applyVolumeBoost();
     _startSecondBySecondExpAndUsageTracker();
+  }
+
+  void _onSelectTab(int newIndex) {
+    if (newIndex == _currentTabIndex) return;
+    final fromIdx = _currentTabIndex;
+    setState(() {
+      _previousTabIndex = fromIdx;
+      _currentTabIndex = newIndex;
+      _arcFromTabIndex = fromIdx;
+      _arcToTabIndex = newIndex;
+    });
+    _tabArcController.forward(from: 0.0);
   }
 
   void _applyVolumeBoost() {
@@ -805,7 +936,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   int _expRequiredForLevel(int level) {
-    return (200 + (level - 1) * 150).toInt();
+    return (150 + (level - 1) * 100).toInt();
   }
 
   int get _expIntoCurrentLevel {
@@ -867,7 +998,7 @@ class _MainTabScreenState extends State<MainTabScreen>
           ((_currentTrackSecondsListened - 1) ~/ 60) + 1;
       if (currentMinuteBlock > _lastAwardedMinuteBlock) {
         _lastAwardedMinuteBlock = currentMinuteBlock;
-        _grantExp(50);
+        _grantExp(15);
         _savePersistentState();
       }
     });
@@ -1084,106 +1215,6 @@ class _MainTabScreenState extends State<MainTabScreen>
     }
   }
 
-  Future<void> _handleNotificationAction(String? actionId) async {
-    if (actionId == null) return;
-    switch (actionId) {
-      case 'prev_track':
-        _playPreviousInQueue();
-        break;
-      case 'rewind_10':
-        final target = Duration(
-            seconds: math.max(0, _audioPlayer.position.inSeconds - 10));
-        await _audioPlayer.seek(target);
-        if (_currentPlayingTrack != null) {
-          _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
-        }
-        break;
-      case 'pause_track':
-        await _audioPlayer.pause();
-        if (_currentPlayingTrack != null) {
-          _showNowPlayingNotification(_currentPlayingTrack!, false);
-        }
-        break;
-      case 'play_track':
-        await _audioPlayer.play();
-        if (_currentPlayingTrack != null) {
-          _showNowPlayingNotification(_currentPlayingTrack!, true);
-        }
-        break;
-      case 'forward_10':
-        final totalMs = _audioPlayer.duration?.inMilliseconds ??
-            _duration.inMilliseconds;
-        final targetMs = math.min(
-            totalMs > 0 ? totalMs : 180000,
-            _audioPlayer.position.inMilliseconds + 10000);
-        await _audioPlayer.seek(Duration(milliseconds: targetMs));
-        if (_currentPlayingTrack != null) {
-          _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
-        }
-        break;
-      case 'next_track':
-        _playNextInQueue();
-        break;
-    }
-  }
-
-  Future<void> _showNowPlayingNotification(TrackItem track, bool playing) async {
-    if (!widget.settings.pushNotifications) return;
-    try {
-      final posSec = _position.inSeconds;
-      final durSec = _duration.inSeconds > 0 ? _duration.inSeconds : 180;
-      final androidDetails = AndroidNotificationDetails(
-        'music_playback_channel',
-        'Now Playing Controls',
-        channelDescription:
-            'Playback controls for currently playing song (prev, seek, play/pause, next)',
-        importance: Importance.low,
-        priority: Priority.low,
-        ongoing: playing,
-        autoCancel: false,
-        showProgress: true,
-        maxProgress: durSec,
-        progress: posSec.clamp(0, durSec),
-        subText:
-            '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
-        actions: <AndroidNotificationAction>[
-          const AndroidNotificationAction(
-            'prev_track',
-            '⏮',
-            showsUserInterface: true,
-          ),
-          const AndroidNotificationAction(
-            'rewind_10',
-            '⏪ -10s',
-            showsUserInterface: true,
-          ),
-          AndroidNotificationAction(
-            playing ? 'pause_track' : 'play_track',
-            playing ? '⏸' : '▶',
-            showsUserInterface: true,
-          ),
-          const AndroidNotificationAction(
-            'forward_10',
-            '+10s ⏩',
-            showsUserInterface: true,
-          ),
-          const AndroidNotificationAction(
-            'next_track',
-            '⏭',
-            showsUserInterface: true,
-          ),
-        ],
-      );
-
-      await _notifsPlugin.show(
-        1001,
-        track.title,
-        '${track.artist}  •  [${_formatDuration(_position)} ——●—— ${_formatDuration(_duration)}]',
-        NotificationDetails(android: androidDetails),
-      );
-    } catch (_) {}
-  }
-
   String _formatDuration(Duration d) {
     final mins = d.inMinutes;
     final secs = (d.inSeconds % 60).toString().padLeft(2, '0');
@@ -1192,7 +1223,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v10.json');
+    return File('${dir.path}/music_app_persistent_v11.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -1217,7 +1248,7 @@ class _MainTabScreenState extends State<MainTabScreen>
         'lastDailyClaimDateStr': _lastDailyClaimDateStr,
         'streakSaverTokens': _streakSaverTokens,
         'doubleExpEndTime': _doubleExpEndTime?.toIso8601String(),
-        'totalSongsListened': _totalSongsListened,
+        'completedSongsCount': _completedSongsCount,
         'totalUsageMinutes': _totalUsageMinutes,
         'claimedMissionIds': _claimedMissionIds.toList(),
         'ownedCosmeticIds': _ownedCosmeticIds.toList(),
@@ -1270,7 +1301,7 @@ class _MainTabScreenState extends State<MainTabScreen>
             _profile = UserProfileData.fromJson(
                 Map<String, dynamic>.from(data['profile'] as Map));
           }
-          _coins = (data['coins'] as num?)?.toInt() ?? 50;
+          _coins = (data['coins'] as num?)?.toInt() ?? 40;
           _totalExp = (data['totalExp'] as num?)?.toInt() ?? 0;
           _listeningStreak = (data['listeningStreak'] as num?)?.toInt() ?? 1;
           _previousStreakBeforeLoss =
@@ -1286,8 +1317,8 @@ class _MainTabScreenState extends State<MainTabScreen>
             _doubleExpEndTime =
                 DateTime.tryParse(data['doubleExpEndTime'].toString());
           }
-          _totalSongsListened =
-              (data['totalSongsListened'] as num?)?.toInt() ?? 0;
+          _completedSongsCount =
+              (data['completedSongsCount'] as num?)?.toInt() ?? 0;
           _totalUsageMinutes =
               (data['totalUsageMinutes'] as num?)?.toInt() ?? 23;
           _claimedMissionIds =
@@ -1309,12 +1340,18 @@ class _MainTabScreenState extends State<MainTabScreen>
       if (mounted) {
         setState(() => _isPlaying = state.playing);
       }
-      if (_currentPlayingTrack != null) {
-        _showNowPlayingNotification(_currentPlayingTrack!, state.playing);
-      }
-      if (state.processingState == ProcessingState.completed &&
-          widget.settings.autoplay) {
-        _playNextInQueue();
+      if (state.processingState == ProcessingState.completed) {
+        if (!_countedCurrentSongCompletion && _currentPlayingTrack != null) {
+          _countedCurrentSongCompletion = true;
+          setState(() {
+            _completedSongsCount += 1;
+          });
+          _grantExp(20);
+          _savePersistentState();
+        }
+        if (widget.settings.autoplay) {
+          _playNextInQueue();
+        }
       }
     });
     _audioPlayer.positionStream.listen((pos) {
@@ -1332,8 +1369,8 @@ class _MainTabScreenState extends State<MainTabScreen>
   @override
   void dispose() {
     _beatAnimController.dispose();
+    _tabArcController.dispose();
     _listeningTrackerTimer?.cancel();
-    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -1347,14 +1384,14 @@ class _MainTabScreenState extends State<MainTabScreen>
       return;
     }
     try {
-      await _audioPlayer.stop();
       _applyVolumeBoost();
       setState(() {
         _currentPlayingTrack = track;
+        _isPlaying = true;
         _position = Duration.zero;
         _currentTrackSecondsListened = 0;
         _lastAwardedMinuteBlock = 0;
-        _totalSongsListened += 1;
+        _countedCurrentSongCompletion = false;
         if (queue != null && queue.isNotEmpty) {
           _playbackQueue = List<TrackItem>.from(queue);
         }
@@ -1366,12 +1403,19 @@ class _MainTabScreenState extends State<MainTabScreen>
       });
       _savePersistentState();
 
-      final dur = await _audioPlayer.setAsset(track.assetPath);
+      final effectiveVol = widget.settings.equalizerEnabled
+          ? widget.settings.volumeBoost.clamp(0.0, 1.0)
+          : 1.0;
+      final dur = await _audioHandler.playAssetTrack(
+        id: track.id,
+        title: track.title,
+        artist: track.artist,
+        assetPath: track.assetPath,
+        volume: effectiveVol,
+      );
       if (dur != null && mounted) {
         setState(() => _duration = dur);
       }
-      _audioPlayer.play();
-      _showNowPlayingNotification(track, true);
       if (openModal && mounted) _openFullPlayerModal(track);
     } catch (e) {
       if (mounted) {
@@ -1403,12 +1447,12 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   void _playPreviousInQueue() {
     if (_position.inSeconds > 3) {
-      _audioPlayer.seek(Duration.zero);
+      _audioHandler.seek(Duration.zero);
     } else if (_recents.length > 1) {
       final prev = _recents[1];
       _playTrack(prev, openModal: false);
     } else {
-      _audioPlayer.seek(Duration.zero);
+      _audioHandler.seek(Duration.zero);
     }
   }
 
@@ -1422,9 +1466,6 @@ class _MainTabScreenState extends State<MainTabScreen>
       }
     });
     _savePersistentState();
-    if (_currentPlayingTrack != null) {
-      _showNowPlayingNotification(_currentPlayingTrack!, _isPlaying);
-    }
   }
 
   bool _isLiked(TrackItem track) =>
@@ -1512,8 +1553,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   Widget _buildTrackPlayingEqualizerBars(TrackItem track) {
-    final isThisPlaying =
-        _isPlaying && _currentPlayingTrack?.id == track.id;
+    final isThisPlaying = _currentPlayingTrack?.id == track.id && _isPlaying;
     if (!isThisPlaying) return const SizedBox.shrink();
 
     return AnimatedBuilder(
@@ -1526,6 +1566,7 @@ class _MainTabScreenState extends State<MainTabScreen>
           (6 + 10 * ((math.sin(t * math.pi * 2 + 3.6) + 1) / 2)).toDouble(),
         ];
         return Container(
+          key: ValueKey('eq_${track.id}_${_beatAnimController.value.toStringAsFixed(2)}'),
           margin: const EdgeInsets.only(right: 8),
           width: 18,
           height: 18,
@@ -1569,7 +1610,7 @@ class _MainTabScreenState extends State<MainTabScreen>
           ),
           const SizedBox(height: 8),
           Text(
-            'This box is intentionally clean so you can plug in songs directly from your repository or backend without extra clutter. Demo tracks are included in the first two boxes.',
+            'This box is clean and ready for songs from your repository or backend anytime. Demo tracks are included in the first two boxes.',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
@@ -1986,9 +2027,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                     subjectCtrl.clear();
                     feedbackCtrl.clear();
                     Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Submitted successfully')),
-                    );
+                    _showBigTickSuccessDialog('Feedback submitted successfully');
                   },
                   child: const Text('Submit',
                       style: TextStyle(
@@ -2173,11 +2212,11 @@ class _MainTabScreenState extends State<MainTabScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Songs played',
+                          const Text('Completed songs',
                               style: TextStyle(
                                   color: Colors.white70, fontSize: 12)),
                           const SizedBox(height: 8),
-                          Text('$_totalSongsListened',
+                          Text('$_completedSongsCount',
                               style: const TextStyle(
                                   fontSize: 40, fontWeight: FontWeight.bold)),
                         ],
@@ -2789,6 +2828,8 @@ class _MainTabScreenState extends State<MainTabScreen>
             final activeTrack = _currentPlayingTrack ?? track;
             final bool liked = _isLiked(activeTrack);
             final bool inPlaylist = _isInPlaylist(activeTrack);
+            final currentLyricLine =
+                _sampleLyricsLines[(livePos.inSeconds ~/ 5) % _sampleLyricsLines.length];
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.94,
@@ -2816,17 +2857,49 @@ class _MainTabScreenState extends State<MainTabScreen>
                   const SizedBox(height: 16),
                   Expanded(
                     child: Container(
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: const Color(0xFF282828),
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      alignment: Alignment.center,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildGreenMusicLogoTile(size: 132, radius: 18),
-                          const SizedBox(height: 22),
-                          _buildBeatAnimationWidget(height: 44, barCount: 14),
+                          _buildGreenMusicLogoTile(size: 118, radius: 18),
+                          const SizedBox(height: 16),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 118,
+                                height: 78,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.45),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color: Colors.white54, width: 1.5),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  currentLyricLine,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF1DB954),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildBeatAnimationWidget(
+                                    height: 44, barCount: 10),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -2897,7 +2970,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       onChanged: (val) async {
                         final target = Duration(milliseconds: val.round());
                         setState(() => _position = target);
-                        await _audioPlayer.seek(target);
+                        await _audioHandler.seek(target);
                       },
                     ),
                   ),
@@ -2925,7 +2998,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                                 final sec =
                                     (lSnap.data ?? Duration.zero).inSeconds;
                                 final activeLineIdx =
-                                    (sec ~/ 6) % _sampleLyricsLines.length;
+                                    (sec ~/ 5) % _sampleLyricsLines.length;
                                 return Container(
                                   padding: const EdgeInsets.all(20),
                                   height: 360,
@@ -2992,9 +3065,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                                 color: Colors.white),
                             onPressed: () {
                               if (playingNow) {
-                                _audioPlayer.pause();
+                                _audioHandler.pause();
                               } else {
-                                _audioPlayer.play();
+                                _audioHandler.play();
                               }
                             },
                           );
@@ -3494,7 +3567,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     setState(() {
       _lastDailyClaimDateStr = today;
       if (day < 7) {
-        final int rewardCoins = (day * 10).toInt();
+        final int rewardCoins = (day * 5).toInt();
         _coins = (_coins + rewardCoins).toInt();
         _dailyRewardDayIndex += 1;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3505,7 +3578,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       color: Colors.black, fontWeight: FontWeight.bold))),
         );
       } else {
-        _coins = (_coins + 200).toInt();
+        _coins = (_coins + 50).toInt();
         _streakSaverTokens += 1;
         _doubleExpEndTime = DateTime.now().add(const Duration(hours: 24));
         _dailyRewardDayIndex = 1;
@@ -3537,7 +3610,7 @@ class _MainTabScreenState extends State<MainTabScreen>
             SizedBox(height: 12),
             ListTile(
               leading: Icon(Icons.monetization_on, color: Colors.amber),
-              title: Text('+200 Bonus Coins'),
+              title: Text('+50 Bonus Coins'),
             ),
             ListTile(
               leading: Icon(Icons.bolt, color: Color(0xFF1DB954)),
@@ -3607,7 +3680,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   int _getMissionProgress(MissionItem mission) {
     switch (mission.metricType) {
       case 'songs':
-        return _totalSongsListened;
+        return _completedSongsCount;
       case 'minutes':
         return _totalUsageMinutes;
       case 'streak':
@@ -3785,7 +3858,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                             Text(
                               isMysteryBox
                                   ? 'Mystery Box'
-                                  : '+${(day * 10).toInt()} Coins',
+                                  : '+${(day * 5).toInt()} Coins',
                               style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white),
@@ -4013,6 +4086,7 @@ class _MainTabScreenState extends State<MainTabScreen>
       orElse: () => _shopItems[5]);
 
   void _openCreateOrEditProfileForm() {
+    final bool isEditingExisting = _profile.isCreated;
     final firstCtrl = TextEditingController(text: _profile.firstName);
     final lastCtrl = TextEditingController(text: _profile.lastName);
     final birthdayCtrl = TextEditingController(text: _profile.birthday);
@@ -4073,8 +4147,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Create Profile',
-                        style: TextStyle(
+                    Text(isEditingExisting ? 'Edit Profile' : 'Create Profile',
+                        style: const TextStyle(
                             fontSize: 22, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 14),
                     Center(
@@ -4180,10 +4254,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                           });
                           _savePersistentState();
                           Navigator.pop(ctx);
-                          _showBigTickSuccessDialog();
+                          _showBigTickSuccessDialog(isEditingExisting
+                              ? 'Profile edited successfully'
+                              : 'Profile created successfully');
                         },
-                        child: const Text('Save Profile',
-                            style: TextStyle(
+                        child: Text(
+                            isEditingExisting ? 'Save Changes' : 'Save Profile',
+                            style: const TextStyle(
                                 color: Colors.black,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16)),
@@ -4199,7 +4276,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     );
   }
 
-  void _showBigTickSuccessDialog() {
+  void _showBigTickSuccessDialog(String message) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -4222,10 +4299,10 @@ class _MainTabScreenState extends State<MainTabScreen>
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
-              'Profile created successfully',
+            Text(
+              message,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             ElevatedButton(
@@ -4514,9 +4591,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                                       size: 28),
                                   onPressed: () {
                                     if (_isPlaying) {
-                                      _audioPlayer.pause();
+                                      _audioHandler.pause();
                                     } else {
-                                      _audioPlayer.play();
+                                      _audioHandler.play();
                                     }
                                   },
                                 ),
@@ -4535,10 +4612,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                     ),
                   ),
           ),
-          _BouncingBallNavBar(
+          _ArcingBallNavBar(
             currentIndex: _currentTabIndex,
+            fromIndex: _arcFromTabIndex ?? _previousTabIndex,
+            toIndex: _arcToTabIndex ?? _currentTabIndex,
+            arcController: _tabArcController,
             isLight: isLight,
-            onSelect: (idx) => setState(() => _currentTabIndex = idx),
+            onSelect: _onSelectTab,
           ),
         ],
       ),
@@ -4546,13 +4626,19 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 }
 
-class _BouncingBallNavBar extends StatelessWidget {
+class _ArcingBallNavBar extends StatelessWidget {
   final int currentIndex;
+  final int fromIndex;
+  final int toIndex;
+  final AnimationController arcController;
   final bool isLight;
   final ValueChanged<int> onSelect;
 
-  const _BouncingBallNavBar({
+  const _ArcingBallNavBar({
     required this.currentIndex,
+    required this.fromIndex,
+    required this.toIndex,
+    required this.arcController,
     required this.isLight,
     required this.onSelect,
   });
@@ -4568,90 +4654,99 @@ class _BouncingBallNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: isLight ? Colors.white : const Color(0xFF121212),
-      padding: const EdgeInsets.only(top: 6, bottom: 8, left: 6, right: 6),
+      padding: const EdgeInsets.only(top: 8, bottom: 8, left: 6, right: 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final itemWidth = constraints.maxWidth / _tabs.length;
-          final targetX = (currentIndex * itemWidth) + (itemWidth / 2) - 4.5;
+          final startX = (fromIndex * itemWidth) + (itemWidth / 2) - 5;
+          final endX = (toIndex * itemWidth) + (itemWidth / 2) - 5;
 
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: List.generate(_tabs.length, (index) {
-                  final selected = currentIndex == index;
-                  final (iconOut, iconFill, label) = _tabs[index];
-                  return SizedBox(
-                    width: itemWidth,
-                    child: GestureDetector(
-                      onTap: () => onSelect(index),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? (isLight ? Colors.black12 : Colors.white24)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(selected ? iconFill : iconOut,
-                                size: 20,
-                                color: isLight ? Colors.black : Colors.white),
-                            if (selected) ...[
-                              const SizedBox(width: 5),
-                              Flexible(
-                                child: Text(
-                                  label,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
+          return AnimatedBuilder(
+            animation: arcController,
+            builder: (context, _) {
+              final activeArc = arcController.isAnimating;
+              final t = Curves.easeInOutCubic.transform(arcController.value);
+              final curX = startX + (endX - startX) * t;
+              final arcLift = -14.0 * math.sin(t * math.pi);
+              final opacity = activeArc ? (1.0 - (t * 0.85)).clamp(0.0, 1.0) : 0.0;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: List.generate(_tabs.length, (index) {
+                      final selected = currentIndex == index;
+                      final (iconOut, iconFill, label) = _tabs[index];
+                      return SizedBox(
+                        width: itemWidth,
+                        child: GestureDetector(
+                          onTap: () => onSelect(index),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 260),
+                            curve: Curves.easeInOut,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? (isLight ? Colors.black12 : Colors.white24)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(selected ? iconFill : iconOut,
+                                    size: 20,
                                     color:
-                                        isLight ? Colors.black : Colors.white,
+                                        isLight ? Colors.black : Colors.white),
+                                if (selected) ...[
+                                  const SizedBox(width: 5),
+                                  Flexible(
+                                    child: Text(
+                                      label,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isLight
+                                            ? Colors.black
+                                            : Colors.white,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                  if (activeArc)
+                    Positioned(
+                      left: curX,
+                      top: -2 + arcLift,
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1DB954),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                  color: Colors.black54, blurRadius: 4),
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  );
-                }),
-              ),
-              TweenAnimationBuilder<double>(
-                key: ValueKey('ball_tab_$currentIndex'),
-                tween: Tween<double>(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 420),
-                curve: Curves.bounceOut,
-                builder: (context, t, child) {
-                  final bounceOffset = -8.0 * math.sin(t * math.pi);
-                  return Positioned(
-                    left: targetX,
-                    top: -3 + bounceOffset,
-                    child: child!,
-                  );
-                },
-                child: Container(
-                  width: 9,
-                  height: 9,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: Colors.black54, blurRadius: 3),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           );
         },
       ),
