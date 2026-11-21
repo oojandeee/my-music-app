@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -23,16 +22,16 @@ Future<void> _ensureAudioServiceInitialized() async {
     final handler = await AudioService.init(
       builder: () => _MusicAudioHandler(),
       config: const AudioServiceConfig(
-        androidNotificationChannelId: 'com.musicflow.playback.channel',
-        androidNotificationChannelName: 'Music Flow Playback',
+        androidNotificationChannelId: 'com.musicflow.brown_playback.channel',
+        androidNotificationChannelName: 'Music Flow Now Playing',
         androidNotificationOngoing: true,
-        androidStopForegroundOnPause: true,
+        androidStopForegroundOnPause: false,
+        notificationColor: Color(0xFF5D3A1A),
       ),
     );
     _audioHandler = handler;
     _audioServiceReady = true;
   } catch (_) {
-    // Fallback so the UI never hangs on a white screen even if service init fails
     _audioHandler ??= _MusicAudioHandler();
   }
 }
@@ -56,9 +55,7 @@ class _MusicAudioHandler extends BaseAudioHandler
     return PlaybackState(
       controls: [
         MediaControl.skipToPrevious,
-        MediaControl.rewind,
         playing ? MediaControl.pause : MediaControl.play,
-        MediaControl.fastForward,
         MediaControl.skipToNext,
       ],
       systemActions: const {
@@ -66,7 +63,7 @@ class _MusicAudioHandler extends BaseAudioHandler
         MediaAction.seekForward,
         MediaAction.seekBackward,
       },
-      androidCompactActionIndices: const [0, 2, 4],
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
@@ -98,12 +95,12 @@ class _MusicAudioHandler extends BaseAudioHandler
         duration: const Duration(minutes: 3),
       ),
     );
-    await player.stop();
     await player.setVolume(volume.clamp(0.0, 1.0));
     final dur = await player.setAsset(assetPath);
     if (dur != null) {
       mediaItem.add(mediaItem.value?.copyWith(duration: dur));
     }
+    await player.seek(Duration.zero);
     unawaited(player.play());
     return dur;
   }
@@ -121,21 +118,6 @@ class _MusicAudioHandler extends BaseAudioHandler
   @override
   Future<void> seek(Duration position) async {
     await player.seek(position);
-  }
-
-  @override
-  Future<void> rewind() async {
-    final target =
-        Duration(seconds: math.max(0, player.position.inSeconds - 10));
-    await player.seek(target);
-  }
-
-  @override
-  Future<void> fastForward() async {
-    final totalMs = player.duration?.inMilliseconds ?? 180000;
-    final targetMs =
-        math.min(totalMs, player.position.inMilliseconds + 10000);
-    await player.seek(Duration(milliseconds: targetMs));
   }
 
   @override
@@ -185,7 +167,7 @@ class TrackItem {
   factory TrackItem.fromJson(Map<String, dynamic> json) => TrackItem(
         id: (json['id'] ?? '').toString(),
         title: (json['title'] ?? 'Unknown Title').toString(),
-        artist: (json['artist'] ?? 'Unknown Artist').toString(),
+        artist: (json['artist'] ?? 'Karol G').toString(),
         assetPath: (json['assetPath'] ?? 'sample_track_1.mp3').toString(),
         playsCount: (json['playsCount'] ?? '71,297,233').toString(),
         playedAt: json['playedAt'] != null
@@ -276,18 +258,14 @@ class HomeSection {
 
 class AvatarPreset {
   final String id;
-  final String label;
   final Color bgStart;
   final Color bgEnd;
-  final String badgeText;
   final IconData icon;
 
   const AvatarPreset({
     required this.id,
-    required this.label,
     required this.bgStart,
     required this.bgEnd,
-    required this.badgeText,
     required this.icon,
   });
 }
@@ -330,7 +308,7 @@ class UserProfileData {
       UserProfileData(
         firstName: (json['firstName'] ?? '').toString(),
         lastName: (json['lastName'] ?? '').toString(),
-        birthday: (json['birthday'] ?? json['email'] ?? '').toString(),
+        birthday: (json['birthday'] ?? '').toString(),
         city: (json['city'] ?? '').toString(),
         address: (json['address'] ?? '').toString(),
         avatarId: (json['avatarId'] ?? 'avatar_lion_real').toString(),
@@ -458,7 +436,6 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 1450),
     );
-
     _logoScaleAnim = CurvedAnimation(
       parent: _splashCtrl,
       curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
@@ -481,9 +458,9 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
   Future<void> _initAndDismissSplash() async {
     await Future.any([
       _ensureAudioServiceInitialized(),
-      Future.delayed(const Duration(milliseconds: 2200)),
+      Future.delayed(const Duration(milliseconds: 2000)),
     ]);
-    await Future.delayed(const Duration(milliseconds: 1650));
+    await Future.delayed(const Duration(milliseconds: 1400));
     if (mounted) {
       setState(() => _showSplash = false);
     }
@@ -507,15 +484,32 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
     final isMidnight = mode == 'Midnight';
 
     final bgColor = isLight
-        ? Colors.white
+        ? const Color(0xFFF8FAFC)
         : isNeon
-            ? const Color(0xFF070514)
+            ? const Color(0xFF09051A)
             : isMidnight
-                ? const Color(0xFF000000)
+                ? const Color(0xFF040B1E)
                 : const Color(0xFF121212);
 
-    final primaryAccent =
-        isNeon ? const Color(0xFF00F5D4) : const Color(0xFF1DB954);
+    final surfaceColor = isLight
+        ? Colors.white
+        : isNeon
+            ? const Color(0xFF1B0C38)
+            : isMidnight
+                ? const Color(0xFF0D1B3E)
+                : const Color(0xFF1E1E1E);
+
+    final primaryAccent = isNeon
+        ? const Color(0xFF00F5D4)
+        : isMidnight
+            ? const Color(0xFF38BDF8)
+            : const Color(0xFF1DB954);
+
+    final secondaryAccent = isNeon
+        ? const Color(0xFFFF007F)
+        : isMidnight
+            ? const Color(0xFF818CF8)
+            : const Color(0xFF1DB954);
 
     return MaterialApp(
       title: 'Music Flow',
@@ -525,12 +519,14 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
         scaffoldBackgroundColor: bgColor,
         colorScheme: isLight
             ? ColorScheme.light(
-                primary: primaryAccent, surface: Colors.grey[100]!)
+                primary: primaryAccent,
+                secondary: secondaryAccent,
+                surface: surfaceColor,
+              )
             : ColorScheme.dark(
                 primary: primaryAccent,
-                secondary: isNeon ? const Color(0xFFFF007F) : primaryAccent,
-                surface:
-                    isNeon ? const Color(0xFF130D2E) : const Color(0xFF181818),
+                secondary: secondaryAccent,
+                surface: surfaceColor,
               ),
       ),
       home: _showSplash
@@ -547,12 +543,11 @@ class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
         child: AnimatedBuilder(
           animation: _splashCtrl,
           builder: (context, _) {
-            final scale = _logoScaleAnim.value.clamp(0.0, 1.2);
             return Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Transform.scale(
-                  scale: scale,
+                  scale: _logoScaleAnim.value.clamp(0.0, 1.2),
                   child: SizedBox(
                     width: 240,
                     height: 150,
@@ -604,7 +599,6 @@ class _HalfVinylWaveLogoPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
 
-    // Right half vinyl disc
     final discRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
     final rightHalfPath = Path()
       ..moveTo(cx + 3, cy - r)
@@ -612,7 +606,6 @@ class _HalfVinylWaveLogoPainter extends CustomPainter {
       ..close();
     canvas.drawPath(rightHalfPath, whiteFill);
 
-    // Center spindle cutout & dot on the right half disc
     canvas.drawArc(
       Rect.fromCircle(center: Offset(cx + 3, cy), radius: r * 0.28),
       -math.pi / 2,
@@ -622,7 +615,6 @@ class _HalfVinylWaveLogoPainter extends CustomPainter {
     );
     canvas.drawCircle(Offset(cx + 9, cy), 2.4, whiteFill);
 
-    // Groove scratches inside right half vinyl
     for (int i = -4; i <= 4; i++) {
       final yOff = i * (r * 0.14);
       final xStart = cx + r * 0.42;
@@ -637,10 +629,21 @@ class _HalfVinylWaveLogoPainter extends CustomPainter {
       );
     }
 
-    // Left waveform lines tapering into the half disc
     final wavePath = Path();
     wavePath.moveTo(size.width * 0.06, cy);
-    final peaks = [0.06, -0.08, 0.14, -0.22, 0.36, -0.55, 0.78, -0.94, 1.0, -0.92, 0.72];
+    final peaks = [
+      0.06,
+      -0.08,
+      0.14,
+      -0.22,
+      0.36,
+      -0.55,
+      0.78,
+      -0.94,
+      1.0,
+      -0.92,
+      0.72
+    ];
     final span = (cx - 4) - (size.width * 0.08);
     for (int i = 0; i < peaks.length; i++) {
       final frac = i / (peaks.length - 1);
@@ -655,7 +658,6 @@ class _HalfVinylWaveLogoPainter extends CustomPainter {
     }
     canvas.drawPath(wavePath, whiteStroke);
 
-    // Right tail wave
     final tailPath = Path();
     final rightStart = cx + r + 2;
     final rightEnd = size.width * 0.94;
@@ -698,6 +700,9 @@ class _MainTabScreenState extends State<MainTabScreen>
       (_audioHandler ??= _MusicAudioHandler()).player;
   Timer? _listeningTrackerTimer;
   late final AnimationController _beatAnimController;
+  bool _isStartingPlayback = false;
+  bool _clockTamperedDetected = false;
+  int _maxObservedEpochMs = 0;
 
   List<TrackItem> _playlist = [];
   List<TrackItem> _likedSongs = [];
@@ -744,82 +749,62 @@ class _MainTabScreenState extends State<MainTabScreen>
   static const List<AvatarPreset> _avatarPresets = [
     AvatarPreset(
       id: 'avatar_lion_real',
-      label: 'Roar Lion',
       bgStart: Color(0xFFB45309),
       bgEnd: Color(0xFF451A03),
-      badgeText: 'LION',
       icon: Icons.pets,
     ),
     AvatarPreset(
       id: 'avatar_armor_hero',
-      label: 'Red Armor',
       bgStart: Color(0xFFDC2626),
       bgEnd: Color(0xFF991B1B),
-      badgeText: 'ARMOR',
       icon: Icons.shield,
     ),
     AvatarPreset(
       id: 'avatar_web_hero',
-      label: 'Web Hero',
       bgStart: Color(0xFF2563EB),
       bgEnd: Color(0xFF991B1B),
-      badgeText: 'HERO',
       icon: Icons.bolt,
     ),
     AvatarPreset(
       id: 'avatar_boss_cat',
-      label: 'Boss Cat',
       bgStart: Color(0xFF1F2937),
       bgEnd: Color(0xFF090D16),
-      badgeText: 'BOSS',
       icon: Icons.cruelty_free,
     ),
     AvatarPreset(
       id: 'avatar_paris_tower',
-      label: 'Paris Night',
       bgStart: Color(0xFF312E81),
       bgEnd: Color(0xFFF59E0B),
-      badgeText: 'PARIS',
       icon: Icons.location_city,
     ),
     AvatarPreset(
       id: 'avatar_cr7_art',
-      label: 'Star #7',
       bgStart: Color(0xFFEA580C),
       bgEnd: Color(0xFF7F1D1D),
-      badgeText: 'NO.7',
       icon: Icons.sports_soccer,
     ),
     AvatarPreset(
       id: 'avatar_red_ronin',
-      label: 'Crimson Blade',
       bgStart: Color(0xFF991B1B),
       bgEnd: Color(0xFF111827),
-      badgeText: 'BLADE',
       icon: Icons.whatshot,
     ),
     AvatarPreset(
       id: 'avatar_wild_wolf',
-      label: 'Alpha Wolf',
       bgStart: Color(0xFF334155),
       bgEnd: Color(0xFF0F172A),
-      badgeText: 'WOLF',
       icon: Icons.nightlight_round,
     ),
     AvatarPreset(
       id: 'avatar_golden_eagle',
-      label: 'Sky Eagle',
       bgStart: Color(0xFFD97706),
       bgEnd: Color(0xFF1E3A8A),
-      badgeText: 'EAGLE',
       icon: Icons.flight_takeoff,
     ),
     AvatarPreset(
       id: 'avatar_space_ranger',
-      label: 'Star Ranger',
       bgStart: Color(0xFF16A34A),
       bgEnd: Color(0xFF5B21B6),
-      badgeText: 'ORBIT',
       icon: Icons.rocket_launch,
     ),
   ];
@@ -1100,6 +1085,30 @@ class _MainTabScreenState extends State<MainTabScreen>
     _tabArcController.forward(from: 0.0);
   }
 
+  Color _accentColor() {
+    switch (widget.settings.themeMode) {
+      case 'Neon':
+        return const Color(0xFF00F5D4);
+      case 'Midnight':
+        return const Color(0xFF38BDF8);
+      default:
+        return const Color(0xFF1DB954);
+    }
+  }
+
+  Color _surfaceCardColor() {
+    switch (widget.settings.themeMode) {
+      case 'Light':
+        return const Color(0xFFF1F5F9);
+      case 'Neon':
+        return const Color(0xFF1A0B36);
+      case 'Midnight':
+        return const Color(0xFF0C1A3B);
+      default:
+        return const Color(0xFF222222);
+    }
+  }
+
   void _applyVolumeBoost() {
     final effectiveVol = widget.settings.equalizerEnabled
         ? widget.settings.volumeBoost.clamp(0.0, 2.0)
@@ -1156,7 +1165,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     if (newLv > oldLv && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF1DB954),
+          backgroundColor: _accentColor(),
           content: Text(
             'LEVEL UP! You reached Lv.$newLv!',
             style: const TextStyle(
@@ -1167,10 +1176,36 @@ class _MainTabScreenState extends State<MainTabScreen>
     }
   }
 
+  /// Detects if the user manually moved the device clock backward or jumped
+  /// wildly into the future to cheat daily rewards/missions.
+  bool _checkClockIntegrity() {
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (_maxObservedEpochMs > 0 && nowMs < _maxObservedEpochMs - 120000) {
+      _clockTamperedDetected = true;
+    } else if (_maxObservedEpochMs > 0 &&
+        nowMs - _maxObservedEpochMs > 1000 * 60 * 60 * 48) {
+      // Clock jumped ahead by more than 48 hours without normal session progression
+      _clockTamperedDetected = true;
+    }
+    if (nowMs > _maxObservedEpochMs) {
+      _maxObservedEpochMs = nowMs;
+    }
+    return !_clockTamperedDetected;
+  }
+
   void _startSecondBySecondExpAndUsageTracker() {
     _listeningTrackerTimer =
         Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted || !_isPlaying) return;
+      if (!mounted) return;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (_maxObservedEpochMs > 0 && nowMs < _maxObservedEpochMs - 60000) {
+        _clockTamperedDetected = true;
+      }
+      if (nowMs > _maxObservedEpochMs) {
+        _maxObservedEpochMs = nowMs;
+      }
+
+      if (!_isPlaying) return;
       _currentTrackSecondsListened++;
 
       if (_currentTrackSecondsListened == 1) {
@@ -1220,6 +1255,7 @@ class _MainTabScreenState extends State<MainTabScreen>
             _listeningStreak = 0;
             _lastActiveDateStr = today;
           });
+          _triggerMissedRewardOrStreakReminder();
         }
       }
     } else {
@@ -1231,10 +1267,24 @@ class _MainTabScreenState extends State<MainTabScreen>
     _savePersistentState();
   }
 
+  void _triggerMissedRewardOrStreakReminder() {
+    if (!widget.settings.pushNotifications || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF5D3A1A),
+        duration: const Duration(seconds: 5),
+        content: const Text(
+          'We missed you — claim your daily reward! Your daily rewards are waiting to be claimed and your streak is near to be broken.',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
   TrackItem _karolTrack(String idPrefix) => TrackItem(
         id: '${idPrefix}_karol_g',
         title: 'Karol G (Hit Single)',
-        artist: 'Karol G, Judeline, rusowsky',
+        artist: 'Karol G',
         assetPath: _karolAssetPath,
         playsCount: '71,297,233',
       );
@@ -1251,27 +1301,27 @@ class _MainTabScreenState extends State<MainTabScreen>
     final shortcutNames = [
       'Search',
       'Karol G Mix',
-      'Patandar',
-      'Threat 2.0',
+      'Taylor Mix',
+      'Spotlight Mix',
       'Archives',
-      'Kaptaan',
+      'Sessions',
       'Chill Mix',
-      'Scars & Bars',
+      'Night Mix',
     ];
 
     _top8Shortcuts = List.generate(8, (i) {
       List<TrackItem> tracks = [];
-      if (i == 1) {
-        tracks = [_karolTrack('shortcut_1')];
-      } else if (i == 3) {
-        tracks = [_taylorTrack('shortcut_3')];
+      if (i == 1 || i == 4 || i == 6) {
+        tracks = [_karolTrack('shortcut_$i')];
+      } else if (i == 2 || i == 3 || i == 5 || i == 7) {
+        tracks = [_taylorTrack('shortcut_$i')];
       }
       return BoxModel(
         id: 'shortcut_$i',
         name: shortcutNames[i],
         subtitle: i == 0 ? 'Tap to Search' : 'Curated Mix',
         description:
-            'Quick shortcut for ${shortcutNames[i]} — ready to expand with your tracks.',
+            'Quick shortcut for ${shortcutNames[i]} with available audio tracks.',
         colorValue: i % 2 == 1 ? 0xFF000000 : _palette[i % _palette.length],
         useGreenMusicLogo: i % 2 == 1,
         tracks: tracks,
@@ -1284,125 +1334,83 @@ class _MainTabScreenState extends State<MainTabScreen>
       'Recommended for today',
       'Your top mixes',
       'Popular radio',
-      'Trending now',
-      'Punjabi hits',
-      'Fresh finds',
-      'Late night vibes',
     ];
-    final artistNames = [
-      'Karol G',
-      'Taylor Swift',
-      'Sidhu Moose Wala',
-      'Prem Dhillon',
-      'Arijit Singh',
-      'Diljit Dosanjh',
-      'Cheema Y',
-      'Shubh',
-    ];
+    final availableArtists = ['Karol G', 'Taylor Swift'];
 
-    int boxLineCounter = 0;
-    int circleLineCounter = 0;
-
-    for (int cycle = 0; cycle < 3; cycle++) {
-      for (int l = 0; l < 4; l++) {
-        final lineTitle = lineTitles[boxLineCounter % lineTitles.length];
-        final int currentLineIdx = boxLineCounter;
-        final bool isFirstLine = cycle == 0 && l == 0;
-        _homeSections.add(
-          HomeSection(
-            id: 'box_line_${cycle}_$l',
-            type: HomeSectionType.boxLine,
-            title: lineTitle,
-            boxes: List.generate(10, (b) {
-              final bool isFirstBox = isFirstLine && b == 0;
-              final bool isSecondBox = isFirstLine && b == 1;
-              final boxName = isFirstBox
-                  ? 'Karol G Hits'
-                  : isSecondBox
-                      ? 'Taylor Swift Spotlight'
-                      : '$lineTitle #${b + 1}';
-              final int artistIdx =
-                  ((currentLineIdx + b) % artistNames.length).toInt();
-              final artist = artistNames[artistIdx];
-              final int colorIdx =
-                  ((currentLineIdx + b) % _palette.length).toInt();
-
-              List<TrackItem> boxTracks = [];
-              if (isFirstBox) {
-                boxTracks = [_karolTrack('first_box')];
-              } else if (isSecondBox) {
-                boxTracks = [_taylorTrack('second_box')];
-              }
-
-              return BoxModel(
-                id: 'box_${cycle}_${l}_$b',
-                name: boxName,
-                subtitle: b % 2 == 0 ? 'Album • $artist' : 'Playlist',
-                description:
-                    'Customizable box template — add your own tracks or connect them from the repository anytime.',
-                colorValue: _palette[colorIdx],
-                useGreenMusicLogo: false,
-                tracks: boxTracks,
-              );
-            }),
-          ),
-        );
-        boxLineCounter++;
-      }
-
-      final int cIdx = circleLineCounter;
+    for (int l = 0; l < lineTitles.length; l++) {
+      final lineTitle = lineTitles[l];
       _homeSections.add(
         HomeSection(
-          id: 'circle_line_$cycle',
-          type: HomeSectionType.circleLine,
-          title: cycle == 0
-              ? 'Your favorite artists'
-              : 'Suggested artists ${cycle + 1}',
-          circles: List.generate(6, (c) {
-            final int artistIdx = ((cIdx * 6 + c) % artistNames.length).toInt();
-            final name = artistNames[artistIdx];
-            final int listeners = (893 - c * 45).clamp(100, 999).toInt();
-            final int colorIdx = ((c + cycle + 2) % _palette.length).toInt();
-            List<TrackItem> artistTracks = [];
-            if (name == 'Karol G' && cycle == 0) {
-              artistTracks = [_karolTrack('artist_karol')];
-            } else if (name == 'Taylor Swift' && cycle == 0) {
-              artistTracks = [_taylorTrack('artist_taylor')];
-            }
-            return CircleItem(
-              id: 'artist_${cycle}_$c',
-              name: name,
-              monthlyListeners: '${listeners}K monthly listeners',
-              colorValue: _palette[colorIdx],
-              popularTracks: artistTracks,
+          id: 'box_line_$l',
+          type: HomeSectionType.boxLine,
+          title: lineTitle,
+          boxes: List.generate(6, (b) {
+            final useKarol = (l + b) % 2 == 0;
+            final artist = availableArtists[useKarol ? 0 : 1];
+            final boxName = l == 0 && b == 0
+                ? 'Karol G Hits'
+                : l == 0 && b == 1
+                    ? 'Taylor Swift Spotlight'
+                    : '$lineTitle #${b + 1}';
+            return BoxModel(
+              id: 'box_${l}_$b',
+              name: boxName,
+              subtitle: 'Album • $artist',
+              description: '$boxName featuring $artist.',
+              colorValue: _palette[(l + b) % _palette.length],
+              useGreenMusicLogo: false,
+              tracks: [
+                useKarol
+                    ? _karolTrack('box_${l}_$b')
+                    : _taylorTrack('box_${l}_$b')
+              ],
             );
           }),
         ),
       );
-      circleLineCounter++;
-
-      _homeSections.add(
-        HomeSection(
-          id: 'featured_video_${cycle}_1',
-          type: HomeSectionType.featuredVideo,
-          title: 'Featured Episode',
-          video: FeaturedVideoModel(
-            id: 'vid_${cycle}_1',
-            bannerHeadline: cycle == 0 ? 'Karol G Live' : 'Taylor Swift',
-            title: cycle == 0
-                ? 'Karol G Global Tour Visualizer & Audio'
-                : 'Taylor Swift Acoustic & Studio Session',
-            channel: cycle == 0 ? 'Karol G' : 'Taylor Swift',
-            meta: 'Nov 19 • 240K+ plays',
-            durationLabel: '27:11',
-            colorValue: cycle == 0 ? 0xFFE8115B : 0xFF1B4D3E,
-            audioTrack: cycle == 0
-                ? _karolTrack('vid_0')
-                : _taylorTrack('vid_1'),
-          ),
-        ),
-      );
     }
+
+    _homeSections.add(
+      HomeSection(
+        id: 'circle_line_artists',
+        type: HomeSectionType.circleLine,
+        title: 'Artists with songs available',
+        circles: [
+          CircleItem(
+            id: 'artist_karol_g',
+            name: 'Karol G',
+            monthlyListeners: '893K monthly listeners',
+            colorValue: 0xFFE8115B,
+            popularTracks: [_karolTrack('artist_karol')],
+          ),
+          CircleItem(
+            id: 'artist_taylor_swift',
+            name: 'Taylor Swift',
+            monthlyListeners: '940K monthly listeners',
+            colorValue: 0xFF1E3264,
+            popularTracks: [_taylorTrack('artist_taylor')],
+          ),
+        ],
+      ),
+    );
+
+    _homeSections.add(
+      HomeSection(
+        id: 'featured_video_0',
+        type: HomeSectionType.featuredVideo,
+        title: 'Featured Episode',
+        video: FeaturedVideoModel(
+          id: 'vid_0',
+          bannerHeadline: 'Karol G Live',
+          title: 'Karol G Global Tour Visualizer & Audio',
+          channel: 'Karol G',
+          meta: 'Nov 19 • 240K+ plays',
+          durationLabel: '27:11',
+          colorValue: 0xFFE8115B,
+          audioTrack: _karolTrack('vid_0'),
+        ),
+      ),
+    );
   }
 
   String _formatDuration(Duration d) {
@@ -1413,7 +1421,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v12.json');
+    return File('${dir.path}/music_app_persistent_v14.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -1444,6 +1452,8 @@ class _MainTabScreenState extends State<MainTabScreen>
         'ownedCosmeticIds': _ownedCosmeticIds.toList(),
         'equippedBadgeId': _equippedBadgeId,
         'equippedFrameId': _equippedFrameId,
+        'maxObservedEpochMs': _maxObservedEpochMs,
+        'clockTamperedDetected': _clockTamperedDetected,
       };
       await file.writeAsString(jsonEncode(payload));
     } catch (_) {}
@@ -1519,7 +1529,18 @@ class _MainTabScreenState extends State<MainTabScreen>
               (data['equippedBadgeId'] ?? 'badge_wood').toString();
           _equippedFrameId =
               (data['equippedFrameId'] ?? 'frame_wood').toString();
+          _maxObservedEpochMs =
+              (data['maxObservedEpochMs'] as num?)?.toInt() ?? 0;
+          _clockTamperedDetected = data['clockTamperedDetected'] == true;
         });
+
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        if (_maxObservedEpochMs > 0 && nowMs < _maxObservedEpochMs - 60000) {
+          _clockTamperedDetected = true;
+          _savePersistentState();
+        } else if (nowMs > _maxObservedEpochMs) {
+          _maxObservedEpochMs = nowMs;
+        }
         _applyVolumeBoost();
       }
     } catch (_) {}
@@ -1573,10 +1594,13 @@ class _MainTabScreenState extends State<MainTabScreen>
       );
       return;
     }
+    if (_isStartingPlayback) return;
+    _isStartingPlayback = true;
     try {
       await _ensureAudioServiceInitialized();
       _bindAudioHandlerCallbacks();
       _applyVolumeBoost();
+
       setState(() {
         _currentPlayingTrack = track;
         _isPlaying = true;
@@ -1589,7 +1613,17 @@ class _MainTabScreenState extends State<MainTabScreen>
         }
         if (!widget.settings.privateSession) {
           _recents.removeWhere((t) => t.id == track.id);
-          _recents.insert(0, track);
+          _recents.insert(
+              0,
+              TrackItem(
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                assetPath: track.assetPath,
+                playsCount: track.playsCount,
+                playedAt: DateTime.now(),
+                isDownloaded: track.isDownloaded,
+              ));
           if (_recents.length > 50) _recents = _recents.sublist(0, 50);
         }
       });
@@ -1609,9 +1643,9 @@ class _MainTabScreenState extends State<MainTabScreen>
           volume: effectiveVol,
         );
       } else {
-        await _audioPlayer.stop();
         await _audioPlayer.setVolume(effectiveVol);
         dur = await _audioPlayer.setAsset(track.assetPath);
+        await _audioPlayer.seek(Duration.zero);
         unawaited(_audioPlayer.play());
       }
       if (dur != null && mounted) {
@@ -1623,6 +1657,8 @@ class _MainTabScreenState extends State<MainTabScreen>
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Playback error: $e')));
       }
+    } finally {
+      _isStartingPlayback = false;
     }
   }
 
@@ -1714,9 +1750,9 @@ class _MainTabScreenState extends State<MainTabScreen>
     if (diff.inDays == 0) {
       return 'Today, ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
     } else if (diff.inDays == 1) {
-      return 'Yesterday, Nov ${dt.day} ${dt.year}';
+      return 'Yesterday';
     } else {
-      return 'Nov ${dt.day}, ${dt.year}';
+      return '${dt.day}/${dt.month}/${dt.year}';
     }
   }
 
@@ -1727,10 +1763,10 @@ class _MainTabScreenState extends State<MainTabScreen>
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: const Color(0xFF1DB954).withOpacity(0.45)),
+        border: Border.all(color: _accentColor().withOpacity(0.45)),
       ),
       child: CustomPaint(
-        painter: _GreenMusicLogoPainter(),
+        painter: _GreenMusicLogoPainter(accentColor: _accentColor()),
       ),
     );
   }
@@ -1758,6 +1794,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     if (!isThisPlaying) return const SizedBox.shrink();
 
     return AnimatedBuilder(
+      key: ValueKey('eq_anim_${track.id}'),
       animation: _beatAnimController,
       builder: (context, _) {
         final t = _beatAnimController.value;
@@ -1767,7 +1804,6 @@ class _MainTabScreenState extends State<MainTabScreen>
           (6 + 10 * ((math.sin(t * math.pi * 2 + 3.6) + 1) / 2)).toDouble(),
         ];
         return Container(
-          key: ValueKey('eq_${track.id}_${_beatAnimController.value.toStringAsFixed(2)}'),
           margin: const EdgeInsets.only(right: 8),
           width: 18,
           height: 18,
@@ -1788,39 +1824,6 @@ class _MainTabScreenState extends State<MainTabScreen>
           ),
         );
       },
-    );
-  }
-
-  Widget _buildBuyerFriendlyEmptyBoxView(BoxModel box, bool isLight) {
-    return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildCircleDotBoxTile(
-              colorValue: box.colorValue, size: 76, radius: 16),
-          const SizedBox(height: 18),
-          Text(
-            '${box.name} is ready for your tracks',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isLight ? Colors.black : Colors.white,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'This box is clean and ready for songs from your repository or backend anytime. Demo tracks are included in the first two boxes.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: isLight ? Colors.black54 : Colors.white60,
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1848,20 +1851,8 @@ class _MainTabScreenState extends State<MainTabScreen>
           width: selected ? 3 : 1.5,
         ),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(preset.icon, color: Colors.white, size: radius * 0.68),
-          Text(
-            preset.badgeText,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: (radius * 0.25).clamp(7, 11),
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.4,
-            ),
-          ),
-        ],
+      child: Center(
+        child: Icon(preset.icon, color: Colors.white, size: radius * 0.85),
       ),
     );
   }
@@ -1869,7 +1860,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   void _openTrack3DotsMenu(TrackItem track, {VoidCallback? onHide}) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: _surfaceCardColor(),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) {
@@ -1883,8 +1874,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                   title: Text(track.title,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                       maxLines: 1),
-                  subtitle: Text(track.artist,
-                      style: const TextStyle(color: Colors.white70)),
+                  subtitle: Text(track.artist),
                 ),
                 const Divider(color: Colors.white12),
                 ListTile(
@@ -1955,27 +1945,6 @@ class _MainTabScreenState extends State<MainTabScreen>
                     );
                   },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.info_outline),
-                  title: const Text('View song credits'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    showDialog(
-                      context: context,
-                      builder: (dCtx) => AlertDialog(
-                        backgroundColor: const Color(0xFF242424),
-                        title: Text(track.title),
-                        content: Text(
-                            'Artist: ${track.artist}\nPlays: ${track.playsCount}\nAsset: ${track.assetPath}'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(dCtx),
-                              child: const Text('Close'))
-                        ],
-                      ),
-                    );
-                  },
-                ),
               ],
             ),
           ),
@@ -1987,7 +1956,7 @@ class _MainTabScreenState extends State<MainTabScreen>
   void _openQueueDialog() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: _surfaceCardColor(),
       builder: (ctx) => Container(
         padding: const EdgeInsets.all(16),
         height: 350,
@@ -2090,7 +2059,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                   autofocus: true,
                   style: const TextStyle(color: Colors.white),
                   decoration: const InputDecoration(
-                    hintText: 'Search songs, artists, podcasts...',
+                    hintText: 'Search songs or artists...',
                     hintStyle: TextStyle(color: Colors.white54),
                     border: InputBorder.none,
                   ),
@@ -2099,7 +2068,7 @@ class _MainTabScreenState extends State<MainTabScreen>
               ),
               body: searchController.text.trim().isEmpty
                   ? const Center(
-                      child: Text('Type to search across all boxes and podcasts',
+                      child: Text('Type to search Karol G or Taylor Swift',
                           style: TextStyle(color: Colors.white54)))
                   : (searchResults.isEmpty && artistResults.isEmpty)
                       ? const Center(
@@ -2112,9 +2081,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                           padding: const EdgeInsets.all(16),
                           children: [
                             if (artistResults.isNotEmpty) ...[
-                              const Text('Artists',
+                              Text('Artists',
                                   style: TextStyle(
-                                      color: Color(0xFF1DB954),
+                                      color: _accentColor(),
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16)),
                               const SizedBox(height: 8),
@@ -2137,9 +2106,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                               const SizedBox(height: 16),
                             ],
                             if (searchResults.isNotEmpty) ...[
-                              const Text('Songs & Audio',
+                              Text('Songs & Audio',
                                   style: TextStyle(
-                                      color: Color(0xFF1DB954),
+                                      color: _accentColor(),
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16)),
                               const SizedBox(height: 8),
@@ -2177,7 +2146,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: _surfaceCardColor(),
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(
@@ -2212,8 +2181,8 @@ class _MainTabScreenState extends State<MainTabScreen>
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1DB954)),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: _accentColor()),
                   onPressed: () {
                     if (nameCtrl.text.trim().isEmpty ||
                         subjectCtrl.text.trim().isEmpty ||
@@ -2248,7 +2217,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: _surfaceCardColor(),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setEqState) {
@@ -2267,7 +2236,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                               fontSize: 19, fontWeight: FontWeight.bold)),
                       Switch(
                         value: widget.settings.equalizerEnabled,
-                        activeColor: const Color(0xFF1DB954),
+                        activeColor: _accentColor(),
                         onChanged: (val) {
                           widget.settings.equalizerEnabled = val;
                           widget.onSettingsChanged(widget.settings);
@@ -2279,55 +2248,36 @@ class _MainTabScreenState extends State<MainTabScreen>
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF282828),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Row(
-                              children: [
-                                Icon(Icons.volume_up, color: Color(0xFF1DB954)),
-                                SizedBox(width: 8),
-                                Text('Volume Boost',
-                                    style:
-                                        TextStyle(fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                            Text(
-                              '$boostPercent%',
-                              style: const TextStyle(
-                                color: Color(0xFF1DB954),
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Volume Boost',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text(
+                        '$boostPercent%',
+                        style: TextStyle(
+                          color: _accentColor(),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
                         ),
-                        Slider(
-                          value: boostVal,
-                          min: 0.2,
-                          max: 2.0,
-                          divisions: 18,
-                          activeColor: const Color(0xFF1DB954),
-                          onChanged: widget.settings.equalizerEnabled
-                              ? (v) {
-                                  setEqState(() => boostVal = v);
-                                  widget.settings.volumeBoost = v;
-                                  widget.onSettingsChanged(widget.settings);
-                                  _applyVolumeBoost();
-                                  _savePersistentState();
-                                }
-                              : null,
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: boostVal,
+                    min: 0.2,
+                    max: 2.0,
+                    divisions: 18,
+                    activeColor: _accentColor(),
+                    onChanged: widget.settings.equalizerEnabled
+                        ? (v) {
+                            setEqState(() => boostVal = v);
+                            widget.settings.volumeBoost = v;
+                            widget.onSettingsChanged(widget.settings);
+                            _applyVolumeBoost();
+                            _savePersistentState();
+                          }
+                        : null,
                   ),
                   const SizedBox(height: 14),
                   const Text('Frequency & Bass Punch',
@@ -2350,7 +2300,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                     width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1DB954)),
+                          backgroundColor: _accentColor()),
                       onPressed: () => Navigator.pop(ctx),
                       child: const Text('Apply Boost',
                           style: TextStyle(
@@ -2370,11 +2320,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (ctx) => Scaffold(
-          backgroundColor: const Color(0xFF121212),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF121212),
-            title: const Text('Listening stats'),
-          ),
+          appBar: AppBar(title: const Text('Listening stats')),
           body: ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -2387,14 +2333,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                          color: const Color(0xFF242424),
+                          color: _surfaceCardColor(),
                           borderRadius: BorderRadius.circular(12)),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Minutes listened',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
+                              style: TextStyle(fontSize: 12)),
                           const SizedBox(height: 8),
                           Text('$_totalUsageMinutes',
                               style: const TextStyle(
@@ -2408,14 +2353,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                          color: const Color(0xFF242424),
+                          color: _surfaceCardColor(),
                           borderRadius: BorderRadius.circular(12)),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Completed songs',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 12)),
+                              style: TextStyle(fontSize: 12)),
                           const SizedBox(height: 8),
                           Text('$_completedSongsCount',
                               style: const TextStyle(
@@ -2446,16 +2390,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
             final isLight = widget.settings.themeMode == 'Light';
             return Scaffold(
-              backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
-              appBar: AppBar(
-                backgroundColor:
-                    isLight ? Colors.white : const Color(0xFF121212),
-                title: Text('Settings',
-                    style: TextStyle(
-                        color: isLight ? Colors.black : Colors.white)),
-                iconTheme: IconThemeData(
-                    color: isLight ? Colors.black : Colors.white),
-              ),
+              appBar: AppBar(title: const Text('Settings')),
               body: ListView(
                 padding: const EdgeInsets.only(bottom: 90),
                 children: [
@@ -2464,25 +2399,29 @@ class _MainTabScreenState extends State<MainTabScreen>
                       margin: const EdgeInsets.all(14),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF202020),
+                        color: _surfaceCardColor(),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                            color: const Color(0xFF1DB954).withOpacity(0.4)),
+                        border:
+                            Border.all(color: _accentColor().withOpacity(0.5)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Saved Profile Details',
+                          Text('Saved Profile Details',
                               style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
-                                  color: Color(0xFF1DB954))),
-                          const Divider(color: Colors.white12),
+                                  color: _accentColor())),
+                          const Divider(),
                           _profileDetailRow('Full Name',
-                              '${_profile.firstName} ${_profile.lastName}'),
-                          _profileDetailRow('Birthday', _profile.birthday),
-                          _profileDetailRow('City', _profile.city),
-                          _profileDetailRow('Address', _profile.address),
+                              '${_profile.firstName} ${_profile.lastName}',
+                              isLight: isLight),
+                          _profileDetailRow('Birthday', _profile.birthday,
+                              isLight: isLight),
+                          _profileDetailRow('City', _profile.city,
+                              isLight: isLight),
+                          _profileDetailRow('Address', _profile.address,
+                              isLight: isLight),
                         ],
                       ),
                     ),
@@ -2495,15 +2434,15 @@ class _MainTabScreenState extends State<MainTabScreen>
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
-                        backgroundColor: const Color(0xFF1E1E1E),
+                        backgroundColor: _surfaceCardColor(),
                         builder: (bCtx) => Column(
                           mainAxisSize: MainAxisSize.min,
                           children: ['Dark', 'Light', 'Neon', 'Midnight']
                               .map((t) => ListTile(
                                     title: Text('$t Theme'),
                                     trailing: widget.settings.themeMode == t
-                                        ? const Icon(Icons.check,
-                                            color: Color(0xFF1DB954))
+                                        ? Icon(Icons.check,
+                                            color: _accentColor())
                                         : null,
                                     onTap: () {
                                       updateSetting(() {
@@ -2547,9 +2486,21 @@ class _MainTabScreenState extends State<MainTabScreen>
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text('Listen anonymously without history'),
                     value: widget.settings.privateSession,
-                    activeColor: const Color(0xFF1DB954),
+                    activeColor: _accentColor(),
                     onChanged: (val) =>
                         updateSetting(() => widget.settings.privateSession = val),
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.notifications_active_outlined,
+                        size: 28),
+                    title: const Text('Reward & Streak Reminders',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: const Text(
+                        'Alert when daily rewards or streaks need attention'),
+                    value: widget.settings.pushNotifications,
+                    activeColor: _accentColor(),
+                    onChanged: (val) => updateSetting(
+                        () => widget.settings.pushNotifications = val),
                   ),
                   SwitchListTile(
                     secondary: const Icon(Icons.volume_up_outlined, size: 28),
@@ -2557,7 +2508,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                         style: TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text('Automatically play next song in queue'),
                     value: widget.settings.autoplay,
-                    activeColor: const Color(0xFF1DB954),
+                    activeColor: _accentColor(),
                     onChanged: (val) =>
                         updateSetting(() => widget.settings.autoplay = val),
                   ),
@@ -2586,8 +2537,6 @@ class _MainTabScreenState extends State<MainTabScreen>
                   .where((t) => !_hiddenTrackIds.contains(t.id))
                   .toList();
               return Scaffold(
-                backgroundColor:
-                    isLight ? Colors.white : const Color(0xFF121212),
                 body: CustomScrollView(
                   slivers: [
                     SliverAppBar(
@@ -2602,7 +2551,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                               end: Alignment.bottomCenter,
                               colors: [
                                 Color(box.colorValue),
-                                isLight ? Colors.white : const Color(0xFF121212)
+                                Theme.of(context).scaffoldBackgroundColor
                               ],
                             ),
                           ),
@@ -2625,28 +2574,19 @@ class _MainTabScreenState extends State<MainTabScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(box.name,
-                                style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        isLight ? Colors.black : Colors.white)),
+                                style: const TextStyle(
+                                    fontSize: 24, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 6),
                             Text(box.description,
-                                style: TextStyle(
-                                    color: isLight
-                                        ? Colors.black54
-                                        : Colors.white70,
-                                    fontSize: 13)),
+                                style: const TextStyle(fontSize: 13)),
                             if (visibleTracks.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               Row(
                                 children: [
                                   IconButton(
-                                    icon: Icon(Icons.arrow_circle_down_outlined,
-                                        size: 30,
-                                        color: isLight
-                                            ? Colors.black54
-                                            : Colors.white70),
+                                    icon: const Icon(
+                                        Icons.arrow_circle_down_outlined,
+                                        size: 30),
                                     onPressed: () {
                                       for (var t in visibleTracks) {
                                         _downloadTrack(t);
@@ -2654,11 +2594,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                                     },
                                   ),
                                   IconButton(
-                                    icon: Icon(Icons.share,
-                                        size: 26,
-                                        color: isLight
-                                            ? Colors.black54
-                                            : Colors.white70),
+                                    icon: const Icon(Icons.share, size: 26),
                                     onPressed: () =>
                                         Share.share('Listen to ${box.name}'),
                                   ),
@@ -2672,8 +2608,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                                     child: Container(
                                       width: 52,
                                       height: 52,
-                                      decoration: const BoxDecoration(
-                                          color: Color(0xFF1DB954),
+                                      decoration: BoxDecoration(
+                                          color: _accentColor(),
                                           shape: BoxShape.circle),
                                       child: const Icon(Icons.play_arrow,
                                           color: Colors.black, size: 32),
@@ -2686,109 +2622,87 @@ class _MainTabScreenState extends State<MainTabScreen>
                         ),
                       ),
                     ),
-                    if (visibleTracks.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: _buildBuyerFriendlyEmptyBoxView(box, isLight),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final track = visibleTracks[index];
-                            final liked = _isLiked(track);
-                            final inPlaylist = _isInPlaylist(track);
-                            return ListTile(
-                              leading: _buildCircleDotBoxTile(
-                                  colorValue: box.colorValue,
-                                  size: 46,
-                                  radius: 6),
-                              title: Row(
-                                children: [
-                                  _buildTrackPlayingEqualizerBars(track),
-                                  Expanded(
-                                    child: Text(
-                                      track.title,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: (_isPlaying &&
-                                                _currentPlayingTrack?.id ==
-                                                    track.id)
-                                            ? const Color(0xFF1DB954)
-                                            : (isLight
-                                                ? Colors.black
-                                                : Colors.white),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              subtitle: Text(track.artist,
-                                  style: TextStyle(
-                                      color: isLight
-                                          ? Colors.black54
-                                          : Colors.white60)),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: Icon(
-                                      inPlaylist
-                                          ? Icons.check_circle
-                                          : Icons.playlist_add,
-                                      color: inPlaylist
-                                          ? const Color(0xFF1DB954)
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final track = visibleTracks[index];
+                          final liked = _isLiked(track);
+                          final inPlaylist = _isInPlaylist(track);
+                          return ListTile(
+                            leading: _buildCircleDotBoxTile(
+                                colorValue: box.colorValue,
+                                size: 46,
+                                radius: 6),
+                            title: Row(
+                              children: [
+                                _buildTrackPlayingEqualizerBars(track),
+                                Expanded(
+                                  child: Text(
+                                    track.title,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: (_isPlaying &&
+                                              _currentPlayingTrack?.id ==
+                                                  track.id)
+                                          ? _accentColor()
                                           : (isLight
-                                              ? Colors.black45
-                                              : Colors.white54),
+                                              ? Colors.black
+                                              : Colors.white),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(track.artist),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(
+                                    inPlaylist
+                                        ? Icons.check_circle
+                                        : Icons.playlist_add,
+                                    color: inPlaylist ? _accentColor() : null,
+                                    size: 22,
+                                  ),
+                                  onPressed: () {
+                                    _addToPlaylist(track);
+                                    setPageState(() {});
+                                  },
+                                ),
+                                IconButton(
+                                  icon: AnimatedRotation(
+                                    turns: liked ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 300),
+                                    child: Icon(
+                                      liked
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color: liked ? Colors.redAccent : null,
                                       size: 22,
                                     ),
-                                    onPressed: () {
-                                      _addToPlaylist(track);
-                                      setPageState(() {});
-                                    },
                                   ),
-                                  IconButton(
-                                    icon: AnimatedRotation(
-                                      turns: liked ? 1.0 : 0.0,
-                                      duration:
-                                          const Duration(milliseconds: 300),
-                                      child: Icon(
-                                        liked
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        color: liked
-                                            ? Colors.redAccent
-                                            : (isLight
-                                                ? Colors.black45
-                                                : Colors.white54),
-                                        size: 22,
-                                      ),
-                                    ),
-                                    onPressed: () {
-                                      _toggleLike(track);
-                                      setPageState(() {});
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.more_vert,
-                                        color: isLight
-                                            ? Colors.black45
-                                            : Colors.white60),
-                                    onPressed: () => _openTrack3DotsMenu(track,
-                                        onHide: () => setPageState(() {})),
-                                  ),
-                                ],
-                              ),
-                              onTap: () => _playTrack(track,
-                                  queue: visibleTracks, openModal: true),
-                            );
-                          },
-                          childCount: visibleTracks.length,
-                        ),
+                                  onPressed: () {
+                                    _toggleLike(track);
+                                    setPageState(() {});
+                                  },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.more_vert),
+                                  onPressed: () => _openTrack3DotsMenu(track,
+                                      onHide: () => setPageState(() {})),
+                                ),
+                              ],
+                            ),
+                            onTap: () => _playTrack(track,
+                                queue: visibleTracks, openModal: true),
+                          );
+                        },
+                        childCount: visibleTracks.length,
                       ),
+                    ),
                   ],
                 ),
               );
@@ -2810,8 +2724,6 @@ class _MainTabScreenState extends State<MainTabScreen>
             builder: (context, setPageState) {
               final isFollowing = _followedArtists.contains(artist.id);
               return Scaffold(
-                backgroundColor:
-                    isLight ? Colors.white : const Color(0xFF121212),
                 body: CustomScrollView(
                   slivers: [
                     SliverAppBar(
@@ -2829,7 +2741,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                               end: Alignment.bottomCenter,
                               colors: [
                                 Color(artist.colorValue),
-                                isLight ? Colors.white : const Color(0xFF121212)
+                                Theme.of(context).scaffoldBackgroundColor
                               ],
                             ),
                           ),
@@ -2854,11 +2766,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                               children: [
                                 OutlinedButton(
                                   style: OutlinedButton.styleFrom(
-                                    foregroundColor:
-                                        isLight ? Colors.black : Colors.white,
                                     side: BorderSide(
                                         color: isFollowing
-                                            ? const Color(0xFF1DB954)
+                                            ? _accentColor()
                                             : Colors.white54),
                                   ),
                                   onPressed: () {
@@ -2886,8 +2796,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                                     child: Container(
                                       width: 52,
                                       height: 52,
-                                      decoration: const BoxDecoration(
-                                          color: Color(0xFF1DB954),
+                                      decoration: BoxDecoration(
+                                          color: _accentColor(),
                                           shape: BoxShape.circle),
                                       child: const Icon(Icons.play_arrow,
                                           color: Colors.black, size: 32),
@@ -2896,74 +2806,49 @@ class _MainTabScreenState extends State<MainTabScreen>
                               ],
                             ),
                             const SizedBox(height: 16),
-                            Text('Popular',
+                            const Text('Popular',
                                 style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        isLight ? Colors.black : Colors.white)),
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
                     ),
-                    if (artist.popularTracks.isEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            'Artist catalog slot ready — add tracks from your repository anytime.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color:
-                                    isLight ? Colors.black54 : Colors.white60),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final track = artist.popularTracks[index];
-                            return ListTile(
-                              leading: Text('${index + 1}',
-                                  style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: isLight
-                                          ? Colors.black
-                                          : Colors.white)),
-                              title: Row(
-                                children: [
-                                  _buildTrackPlayingEqualizerBars(track),
-                                  Expanded(
-                                    child: Text(
-                                      track.title,
-                                      style: TextStyle(
-                                        color: (_isPlaying &&
-                                                _currentPlayingTrack?.id ==
-                                                    track.id)
-                                            ? const Color(0xFF1DB954)
-                                            : (isLight
-                                                ? Colors.black
-                                                : Colors.white),
-                                      ),
-                                      maxLines: 1,
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final track = artist.popularTracks[index];
+                          return ListTile(
+                            leading: Text('${index + 1}',
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.bold)),
+                            title: Row(
+                              children: [
+                                _buildTrackPlayingEqualizerBars(track),
+                                Expanded(
+                                  child: Text(
+                                    track.title,
+                                    style: TextStyle(
+                                      color: (_isPlaying &&
+                                              _currentPlayingTrack?.id ==
+                                                  track.id)
+                                          ? _accentColor()
+                                          : (isLight
+                                              ? Colors.black
+                                              : Colors.white),
                                     ),
+                                    maxLines: 1,
                                   ),
-                                ],
-                              ),
-                              subtitle: Text(track.playsCount,
-                                  style: TextStyle(
-                                      color: isLight
-                                          ? Colors.black54
-                                          : Colors.white60)),
-                              onTap: () => _playTrack(track,
-                                  queue: artist.popularTracks, openModal: true),
-                            );
-                          },
-                          childCount: artist.popularTracks.length,
-                        ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(track.playsCount),
+                            onTap: () => _playTrack(track,
+                                queue: artist.popularTracks, openModal: true),
+                          );
+                        },
+                        childCount: artist.popularTracks.length,
                       ),
+                    ),
                   ],
                 ),
               );
@@ -2974,8 +2859,9 @@ class _MainTabScreenState extends State<MainTabScreen>
     );
   }
 
-  Widget _buildBeatAnimationWidget({double height = 42, int barCount = 12}) {
+  Widget _buildBeatAnimationWidget({double height = 46, int barCount = 14}) {
     return AnimatedBuilder(
+      key: const ValueKey('full_player_beat_bars'),
       animation: _beatAnimController,
       builder: (context, _) {
         final t = _beatAnimController.value;
@@ -3006,11 +2892,91 @@ class _MainTabScreenState extends State<MainTabScreen>
     );
   }
 
+  void _openLyricsAndRestartSheet(TrackItem activeTrack) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceCardColor(),
+      builder: (lCtx) => StreamBuilder<Duration>(
+        stream: _audioPlayer.positionStream,
+        initialData: _audioPlayer.position,
+        builder: (context, lSnap) {
+          final sec = (lSnap.data ?? Duration.zero).inSeconds;
+          final activeLineIdx = (sec ~/ 5) % _sampleLyricsLines.length;
+          final bool songActive = _currentPlayingTrack != null &&
+              (_isPlaying || _position > Duration.zero);
+
+          return Container(
+            padding: const EdgeInsets.all(20),
+            height: 390,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Lyrics - ${activeTrack.title}',
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    if (songActive)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: _accentColor(),
+                        ),
+                        icon: const Icon(Icons.replay),
+                        label: const Text('Restart'),
+                        onPressed: () async {
+                          await (_audioHandler?.seek(Duration.zero) ??
+                              _audioPlayer.seek(Duration.zero));
+                          await (_audioHandler?.play() ?? _audioPlayer.play());
+                          if (mounted) {
+                            setState(() {
+                              _position = Duration.zero;
+                              _currentTrackSecondsListened = 0;
+                              _lastAwardedMinuteBlock = 0;
+                              _countedCurrentSongCompletion = false;
+                            });
+                          }
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _sampleLyricsLines.length,
+                    itemBuilder: (context, idx) {
+                      final isCurrent = idx == activeLineIdx;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(
+                          _sampleLyricsLines[idx],
+                          style: TextStyle(
+                            color: isCurrent ? _accentColor() : Colors.white54,
+                            fontSize: isCurrent ? 18 : 15,
+                            fontWeight:
+                                isCurrent ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   void _openFullPlayerModal(TrackItem track) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF181818),
+      backgroundColor: _surfaceCardColor(),
       builder: (ctx) {
         return StreamBuilder<Duration>(
           stream: _audioPlayer.positionStream,
@@ -3029,8 +2995,6 @@ class _MainTabScreenState extends State<MainTabScreen>
             final activeTrack = _currentPlayingTrack ?? track;
             final bool liked = _isLiked(activeTrack);
             final bool inPlaylist = _isInPlaylist(activeTrack);
-            final currentLyricLine = _sampleLyricsLines[
-                (livePos.inSeconds ~/ 5) % _sampleLyricsLines.length];
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.94,
@@ -3058,49 +3022,17 @@ class _MainTabScreenState extends State<MainTabScreen>
                   const SizedBox(height: 16),
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF282828),
+                        color: Colors.black26,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildGreenMusicLogoTile(size: 118, radius: 18),
-                          const SizedBox(height: 16),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 118,
-                                height: 78,
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.45),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: Colors.white54, width: 1.5),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  currentLyricLine,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xFF1DB954),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _buildBeatAnimationWidget(
-                                    height: 44, barCount: 10),
-                              ),
-                            ],
-                          ),
+                          _buildGreenMusicLogoTile(size: 132, radius: 18),
+                          const SizedBox(height: 24),
+                          _buildBeatAnimationWidget(height: 48, barCount: 14),
                         ],
                       ),
                     ),
@@ -3128,9 +3060,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                           inPlaylist
                               ? Icons.check_circle
                               : Icons.playlist_add,
-                          color: inPlaylist
-                              ? const Color(0xFF1DB954)
-                              : Colors.white70,
+                          color: inPlaylist ? _accentColor() : Colors.white70,
                           size: 26,
                         ),
                         onPressed: () {
@@ -3163,7 +3093,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                           const RoundSliderThumbShape(enabledThumbRadius: 7),
                     ),
                     child: Slider(
-                      activeColor: const Color(0xFF1DB954),
+                      activeColor: _accentColor(),
                       inactiveColor: Colors.white24,
                       min: 0.0,
                       max: maxDur,
@@ -3188,69 +3118,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       IconButton(
+                        tooltip: 'Lyrics',
                         icon: const Icon(Icons.lyrics, color: Colors.white70),
-                        onPressed: () {
-                          showModalBottomSheet(
-                            context: context,
-                            backgroundColor: const Color(0xFF1E1E1E),
-                            builder: (lCtx) => StreamBuilder<Duration>(
-                              stream: _audioPlayer.positionStream,
-                              initialData: _audioPlayer.position,
-                              builder: (context, lSnap) {
-                                final sec =
-                                    (lSnap.data ?? Duration.zero).inSeconds;
-                                final activeLineIdx =
-                                    (sec ~/ 5) % _sampleLyricsLines.length;
-                                return Container(
-                                  padding: const EdgeInsets.all(20),
-                                  height: 360,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Live Lyrics - ${activeTrack.title}',
-                                          style: const TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 12),
-                                      Expanded(
-                                        child: ListView.builder(
-                                          itemCount: _sampleLyricsLines.length,
-                                          itemBuilder: (context, idx) {
-                                            final isCurrent =
-                                                idx == activeLineIdx;
-                                            return Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      vertical: 6),
-                                              child: Text(
-                                                _sampleLyricsLines[idx],
-                                                style: TextStyle(
-                                                  color: isCurrent
-                                                      ? const Color(0xFF1DB954)
-                                                      : Colors.white54,
-                                                  fontSize: isCurrent ? 18 : 15,
-                                                  fontWeight: isCurrent
-                                                      ? FontWeight.bold
-                                                      : FontWeight.normal,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
+                        onPressed: () => _openLyricsAndRestartSheet(activeTrack),
                       ),
                       IconButton(
                         iconSize: 36,
-                        icon: const Icon(Icons.skip_previous,
-                            color: Colors.white),
+                        icon: const Icon(Icons.skip_previous),
                         onPressed: () => _playPreviousInQueue(),
                       ),
                       StreamBuilder<PlayerState>(
@@ -3261,10 +3135,10 @@ class _MainTabScreenState extends State<MainTabScreen>
                           return IconButton(
                             iconSize: 68,
                             icon: Icon(
-                                playingNow
-                                    ? Icons.pause_circle_filled
-                                    : Icons.play_circle_filled,
-                                color: Colors.white),
+                              playingNow
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_filled,
+                            ),
                             onPressed: () {
                               if (playingNow) {
                                 _audioHandler?.pause() ?? _audioPlayer.pause();
@@ -3277,7 +3151,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       ),
                       IconButton(
                         iconSize: 36,
-                        icon: const Icon(Icons.skip_next, color: Colors.white),
+                        icon: const Icon(Icons.skip_next),
                         onPressed: () => _playNextInQueue(),
                       ),
                       IconButton(
@@ -3326,7 +3200,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF282828),
+                      color: _surfaceCardColor(),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
@@ -3352,10 +3226,10 @@ class _MainTabScreenState extends State<MainTabScreen>
                           child: ChoiceChip(
                             label: Text(cat),
                             selected: selected,
-                            selectedColor: const Color(0xFF1DB954),
-                            backgroundColor: const Color(0xFF282828),
+                            selectedColor: _accentColor(),
+                            backgroundColor: _surfaceCardColor(),
                             labelStyle: TextStyle(
-                              color: selected ? Colors.black : Colors.white,
+                              color: selected ? Colors.black : null,
                               fontWeight: FontWeight.w600,
                               fontSize: 12,
                             ),
@@ -3373,25 +3247,40 @@ class _MainTabScreenState extends State<MainTabScreen>
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (ctx) => Scaffold(
-                          appBar: AppBar(title: const Text('Recents')),
-                          body: _recents.isEmpty
-                              ? const Center(
-                                  child: Text('No recently played songs.',
-                                      style: TextStyle(color: Colors.white60)))
-                              : ListView.builder(
-                                  itemCount: _recents.length,
-                                  itemBuilder: (context, i) {
-                                    final t = _recents[i];
-                                    return ListTile(
-                                      title: Text(t.title),
-                                      subtitle: Text(
-                                          '${t.artist} • ${_formatPlayedDate(t.playedAt)}'),
-                                      onTap: () =>
-                                          _playTrack(t, openModal: true),
-                                    );
-                                  },
-                                ),
+                        builder: (ctx) => StatefulBuilder(
+                          builder: (context, setRecentsState) {
+                            return Scaffold(
+                              appBar: AppBar(title: const Text('Recents')),
+                              body: _recents.isEmpty
+                                  ? const Center(
+                                      child: Text('No recently played songs.'))
+                                  : ListView.builder(
+                                      itemCount: _recents.length,
+                                      itemBuilder: (context, i) {
+                                        final t = _recents[i];
+                                        return ListTile(
+                                          title: Text(t.title),
+                                          subtitle: Text(
+                                              '${t.artist} • ${_formatPlayedDate(t.playedAt)}'),
+                                          trailing: IconButton(
+                                            tooltip: 'Remove from recents',
+                                            icon: const Icon(Icons.close,
+                                                color: Colors.redAccent),
+                                            onPressed: () {
+                                              setState(() {
+                                                _recents.removeAt(i);
+                                              });
+                                              setRecentsState(() {});
+                                              _savePersistentState();
+                                            },
+                                          ),
+                                          onTap: () =>
+                                              _playTrack(t, openModal: true),
+                                        );
+                                      },
+                                    ),
+                            );
+                          },
                         ),
                       ),
                     );
@@ -3427,7 +3316,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                     }
                   },
                   child: Material(
-                    color: const Color(0xFF242424),
+                    color: _surfaceCardColor(),
                     borderRadius: BorderRadius.circular(6),
                     clipBehavior: Clip.antiAlias,
                     child: Row(
@@ -3450,9 +3339,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                           child: Text(
                             shortcut.name,
                             style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white),
+                                fontSize: 12, fontWeight: FontWeight.bold),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -3597,7 +3484,7 @@ class _MainTabScreenState extends State<MainTabScreen>
         onTap: () => _playTrack(video.audioTrack, openModal: true),
         child: Container(
           decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
+              color: _surfaceCardColor(),
               borderRadius: BorderRadius.circular(12)),
           clipBehavior: Clip.antiAlias,
           child: Column(
@@ -3646,15 +3533,12 @@ class _MainTabScreenState extends State<MainTabScreen>
                     child: const Icon(Icons.podcasts)),
                 title: Text(video.title,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: Colors.white),
+                        fontWeight: FontWeight.bold, fontSize: 13),
                     maxLines: 2),
                 subtitle: Text('${video.channel} • ${video.meta}',
-                    style:
-                        const TextStyle(color: Colors.white60, fontSize: 11)),
+                    style: const TextStyle(fontSize: 11)),
                 trailing: IconButton(
-                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  icon: const Icon(Icons.more_vert),
                   onPressed: () => _openTrack3DotsMenu(video.audioTrack),
                 ),
               ),
@@ -3666,20 +3550,14 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   Widget _buildPlaylistLibraryTab() {
-    final isLight = widget.settings.themeMode == 'Light';
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
         appBar: AppBar(
-          backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
-          title: Text('Your Playlist & Library',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isLight ? Colors.black : Colors.white)),
+          title: const Text('Your Playlist & Library',
+              style: TextStyle(fontWeight: FontWeight.bold)),
           bottom: TabBar(
-            indicatorColor: const Color(0xFF1DB954),
-            labelColor: isLight ? Colors.black : Colors.white,
+            indicatorColor: _accentColor(),
             tabs: const [
               Tab(text: 'My Playlist'),
               Tab(text: 'Liked Songs'),
@@ -3713,10 +3591,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     if (trackList.isEmpty) {
       return Center(
           child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(emptyMsg,
-                  style: TextStyle(
-                      color: isLight ? Colors.black54 : Colors.white60))));
+              padding: const EdgeInsets.all(24), child: Text(emptyMsg)));
     }
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 115, top: 8),
@@ -3733,7 +3608,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                   track.title,
                   style: TextStyle(
                     color: (_isPlaying && _currentPlayingTrack?.id == track.id)
-                        ? const Color(0xFF1DB954)
+                        ? _accentColor()
                         : (isLight ? Colors.black : Colors.white),
                   ),
                   maxLines: 1,
@@ -3741,9 +3616,7 @@ class _MainTabScreenState extends State<MainTabScreen>
               ),
             ],
           ),
-          subtitle: Text(track.artist,
-              style:
-                  TextStyle(color: isLight ? Colors.black54 : Colors.white60)),
+          subtitle: Text(track.artist),
           trailing: IconButton(
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             onPressed: () => onRemove(track),
@@ -3755,6 +3628,17 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   void _claimDailyReward(int day) {
+    if (!_checkClockIntegrity()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Colors.redAccent,
+          content: Text(
+              'Clock change detected. Daily reward claims are locked until normal time resumes.'),
+        ),
+      );
+      return;
+    }
+
     final today = _todayKey();
     if (_lastDailyClaimDateStr == today) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3768,13 +3652,14 @@ class _MainTabScreenState extends State<MainTabScreen>
 
     setState(() {
       _lastDailyClaimDateStr = today;
+      _maxObservedEpochMs = DateTime.now().millisecondsSinceEpoch;
       if (day < 7) {
         final int rewardCoins = (day * 5).toInt();
         _coins = (_coins + rewardCoins).toInt();
         _dailyRewardDayIndex += 1;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              backgroundColor: const Color(0xFF1DB954),
+              backgroundColor: _accentColor(),
               content: Text('Claimed Day $day Reward: +$rewardCoins Coins!',
                   style: const TextStyle(
                       color: Colors.black, fontWeight: FontWeight.bold))),
@@ -3794,7 +3679,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: _surfaceCardColor(),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
@@ -3807,8 +3692,7 @@ class _MainTabScreenState extends State<MainTabScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('You unlocked grand rewards:',
-                style: TextStyle(color: Colors.white70)),
+            Text('You unlocked grand rewards:'),
             SizedBox(height: 12),
             ListTile(
               leading: Icon(Icons.monetization_on, color: Colors.amber),
@@ -3826,8 +3710,7 @@ class _MainTabScreenState extends State<MainTabScreen>
         ),
         actions: [
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954)),
+            style: ElevatedButton.styleFrom(backgroundColor: _accentColor()),
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Awesome!',
                 style: TextStyle(
@@ -3842,18 +3725,17 @@ class _MainTabScreenState extends State<MainTabScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: _surfaceCardColor(),
         title: const Text('Restore Lost Streak?'),
         content: Text(
-          'Your previous streak of $_previousStreakBeforeLoss days reset to 0 because you missed a day.\n\nStreak Saver Tokens available: $_streakSaverTokens',
+          'Your previous streak of $_previousStreakBeforeLoss days reset to 0.\n\nStreak Saver Tokens available: $_streakSaverTokens',
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Later')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954)),
+            style: ElevatedButton.styleFrom(backgroundColor: _accentColor()),
             onPressed: _streakSaverTokens > 0
                 ? () {
                     setState(() {
@@ -3893,21 +3775,16 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   Widget _buildQuestsTab() {
-    final isLight = widget.settings.themeMode == 'Light';
     final alreadyClaimedToday = _lastDailyClaimDateStr == _todayKey();
 
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
         appBar: AppBar(
-          backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
           title: Row(
             children: [
-              Text('Quests & Rewards',
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: isLight ? Colors.black : Colors.white)),
+              const Text('Quests & Rewards',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               const Spacer(),
               Container(
                 padding:
@@ -3931,21 +3808,11 @@ class _MainTabScreenState extends State<MainTabScreen>
             ],
           ),
           bottom: TabBar(
-            indicatorColor: const Color(0xFF1DB954),
-            labelColor: isLight ? Colors.black : Colors.white,
+            indicatorColor: _accentColor(),
             tabs: const [
-              Tab(
-                icon: Icon(Icons.event_available),
-                text: 'Daily Rewards',
-              ),
-              Tab(
-                icon: Icon(Icons.track_changes),
-                text: 'Missions',
-              ),
-              Tab(
-                icon: Icon(Icons.swap_horiz),
-                text: 'Exchange',
-              ),
+              Tab(icon: Icon(Icons.event_available), text: 'Daily Rewards'),
+              Tab(icon: Icon(Icons.track_changes), text: 'Missions'),
+              Tab(icon: Icon(Icons.swap_horiz), text: 'Exchange'),
             ],
           ),
         ),
@@ -3954,6 +3821,19 @@ class _MainTabScreenState extends State<MainTabScreen>
             ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 115),
               children: [
+                if (_clockTamperedDetected)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Device clock shift detected. Daily mission claims stay synced to real elapsed time.',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 12),
+                    ),
+                  ),
                 if (_previousStreakBeforeLoss > 0 && _listeningStreak == 0)
                   Card(
                     color: Colors.redAccent.withOpacity(0.2),
@@ -3961,7 +3841,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       leading: const Icon(Icons.local_fire_department,
                           color: Colors.orange),
                       title: Text(
-                          'Restore your $_previousStreakBeforeLoss-day streak!'),
+                          'Your streak is near to be broken! Restore $_previousStreakBeforeLoss days?'),
                       subtitle: Text(
                           'You have $_streakSaverTokens Streak Saver token(s)'),
                       trailing: ElevatedButton(
@@ -3983,25 +3863,6 @@ class _MainTabScreenState extends State<MainTabScreen>
                   ],
                 ),
                 const SizedBox(height: 8),
-                if (_isDoubleExpActive)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1DB954).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.bolt, color: Color(0xFF1DB954)),
-                        SizedBox(width: 8),
-                        Text('2x EXP Booster is ACTIVE!',
-                            style: TextStyle(
-                                color: Color(0xFF1DB954),
-                                fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -4027,12 +3888,12 @@ class _MainTabScreenState extends State<MainTabScreen>
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isTodayTarget
-                              ? const Color(0xFF1DB954).withOpacity(0.22)
-                              : const Color(0xFF222222),
+                              ? _accentColor().withOpacity(0.22)
+                              : _surfaceCardColor(),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: isTodayTarget
-                                ? const Color(0xFF1DB954)
+                                ? _accentColor()
                                 : (isMysteryBox
                                     ? Colors.amber
                                     : Colors.white12),
@@ -4044,8 +3905,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                           children: [
                             Text('Day $day',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white70)),
+                                    fontWeight: FontWeight.bold)),
                             const SizedBox(height: 6),
                             Icon(
                               isMysteryBox
@@ -4061,9 +3921,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                               isMysteryBox
                                   ? 'Mystery Box'
                                   : '+${(day * 5).toInt()} Coins',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -4074,7 +3933,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 color: isCompleted
-                                    ? const Color(0xFF1DB954)
+                                    ? _accentColor()
                                     : (isTodayTarget
                                         ? Colors.amber
                                         : Colors.white38),
@@ -4095,12 +3954,14 @@ class _MainTabScreenState extends State<MainTabScreen>
                 final m = _longTermMissions[idx];
                 final int current = _getMissionProgress(m);
                 final bool isClaimed = _claimedMissionIds.contains(m.id);
-                final bool canClaim = !isClaimed && current >= m.targetValue;
+                final bool canClaim = !isClaimed &&
+                    current >= m.targetValue &&
+                    _checkClockIntegrity();
                 final double progressRatio =
                     (current / m.targetValue).clamp(0.0, 1.0);
 
                 return Card(
-                  color: const Color(0xFF202020),
+                  color: _surfaceCardColor(),
                   margin: const EdgeInsets.only(bottom: 12),
                   child: Padding(
                     padding: const EdgeInsets.all(14),
@@ -4109,15 +3970,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.track_changes,
-                                color: Color(0xFF1DB954)),
+                            Icon(Icons.track_changes, color: _accentColor()),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(m.title,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.bold,
-                                      fontSize: 15,
-                                      color: Colors.white)),
+                                      fontSize: 15)),
                             ),
                             Text(
                                 '+${m.coinReward.toInt()} Coins  +${m.expReward.toInt()} EXP',
@@ -4128,14 +3987,12 @@ class _MainTabScreenState extends State<MainTabScreen>
                           ],
                         ),
                         const SizedBox(height: 6),
-                        Text(m.description,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12)),
+                        Text(m.description, style: const TextStyle(fontSize: 12)),
                         const SizedBox(height: 10),
                         LinearProgressIndicator(
                           value: progressRatio,
                           backgroundColor: Colors.white12,
-                          color: const Color(0xFF1DB954),
+                          color: _accentColor(),
                           minHeight: 6,
                         ),
                         const SizedBox(height: 8),
@@ -4144,14 +4001,13 @@ class _MainTabScreenState extends State<MainTabScreen>
                           children: [
                             Text(
                                 '${current.clamp(0, m.targetValue)} / ${m.targetValue}',
-                                style: const TextStyle(
-                                    color: Colors.white60, fontSize: 12)),
+                                style: const TextStyle(fontSize: 12)),
                             ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: isClaimed
                                     ? Colors.grey
                                     : (canClaim
-                                        ? const Color(0xFF1DB954)
+                                        ? _accentColor()
                                         : Colors.white12),
                               ),
                               onPressed: canClaim
@@ -4201,7 +4057,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                 final int itemCost = item.cost.toInt();
 
                 return Card(
-                  color: const Color(0xFF202020),
+                  color: _surfaceCardColor(),
                   margin: const EdgeInsets.only(bottom: 10),
                   child: ListTile(
                     leading: CircleAvatar(
@@ -4209,20 +4065,15 @@ class _MainTabScreenState extends State<MainTabScreen>
                       child: Icon(item.icon, color: item.primaryColor),
                     ),
                     title: Text('${item.name} (${item.tier})',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, color: Colors.white)),
-                    subtitle: Text(
-                        item.type == 'badge'
-                            ? 'Profile Badge'
-                            : 'Decorative Avatar Frame',
-                        style: const TextStyle(color: Colors.white60)),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(item.type == 'badge'
+                        ? 'Profile Badge'
+                        : 'Decorative Avatar Frame'),
                     trailing: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isEquipped
                             ? Colors.blueGrey
-                            : (isOwned
-                                ? const Color(0xFF1DB954)
-                                : Colors.amber),
+                            : (isOwned ? _accentColor() : Colors.amber),
                       ),
                       onPressed: () {
                         if (isOwned) {
@@ -4305,7 +4156,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF181818),
+      backgroundColor: _surfaceCardColor(),
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setFormState) {
@@ -4323,20 +4174,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(
-                      color: hasError
-                          ? Colors.redAccent
-                          : const Color(0xFF1DB954),
+                      color: hasError ? Colors.redAccent : _accentColor(),
                       width: 2),
-                ),
-                errorBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Colors.redAccent, width: 2),
-                ),
-                focusedErrorBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: Colors.redAccent, width: 2),
                 ),
               );
             }
@@ -4406,8 +4245,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                         'Birthday (DD/MM/YYYY) *',
                         errBirthday,
                       ).copyWith(
-                        suffixIcon: const Icon(Icons.cake_outlined,
-                            color: Color(0xFF1DB954)),
+                        suffixIcon:
+                            Icon(Icons.cake_outlined, color: _accentColor()),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -4427,7 +4266,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       height: 48,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1DB954)),
+                            backgroundColor: _accentColor()),
                         onPressed: () {
                           setFormState(() {
                             errFirst = firstCtrl.text.trim().isEmpty;
@@ -4482,7 +4321,7 @@ class _MainTabScreenState extends State<MainTabScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: _surfaceCardColor(),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -4494,10 +4333,10 @@ class _MainTabScreenState extends State<MainTabScreen>
               curve: Curves.elasticOut,
               builder: (context, scale, child) =>
                   Transform.scale(scale: scale, child: child),
-              child: const CircleAvatar(
+              child: CircleAvatar(
                 radius: 44,
-                backgroundColor: Color(0xFF1DB954),
-                child: Icon(Icons.check, size: 54, color: Colors.black),
+                backgroundColor: _accentColor(),
+                child: const Icon(Icons.check, size: 54, color: Colors.black),
               ),
             ),
             const SizedBox(height: 18),
@@ -4508,8 +4347,7 @@ class _MainTabScreenState extends State<MainTabScreen>
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1DB954)),
+              style: ElevatedButton.styleFrom(backgroundColor: _accentColor()),
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Done',
                   style: TextStyle(
@@ -4522,7 +4360,6 @@ class _MainTabScreenState extends State<MainTabScreen>
   }
 
   Widget _buildProfileTab() {
-    final isLight = widget.settings.themeMode == 'Light';
     final frame = _currentFrame;
     final badge = _currentBadge;
     final avatarPreset = _resolveAvatarPreset(_profile.avatarId);
@@ -4538,17 +4375,12 @@ class _MainTabScreenState extends State<MainTabScreen>
         (_expNeededForNextLevel - _expIntoCurrentLevel).toInt();
 
     return Scaffold(
-      backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
       appBar: AppBar(
-        backgroundColor: isLight ? Colors.white : const Color(0xFF121212),
-        title: Text('Profile',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: isLight ? Colors.black : Colors.white)),
+        title:
+            const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: Icon(Icons.settings_outlined,
-                color: isLight ? Colors.black : Colors.white),
+            icon: const Icon(Icons.settings_outlined),
             onPressed: _openSettingsScreen,
           ),
         ],
@@ -4614,30 +4446,26 @@ class _MainTabScreenState extends State<MainTabScreen>
           Center(
             child: Text(
               _profile.displayName,
-              style: TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.bold,
-                  color: isLight ? Colors.black : Colors.white),
+              style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
             ),
           ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF202020),
+              color: _surfaceCardColor(),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: const Color(0xFF1DB954).withOpacity(0.55)),
+              border: Border.all(color: _accentColor().withOpacity(0.55)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'Lv.$_currentLevel',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF1DB954),
+                    color: _accentColor(),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -4654,7 +4482,7 @@ class _MainTabScreenState extends State<MainTabScreen>
             height: 50,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
+                backgroundColor: _accentColor(),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -4675,20 +4503,16 @@ class _MainTabScreenState extends State<MainTabScreen>
     );
   }
 
-  Widget _profileDetailRow(String label, String value) {
+  Widget _profileDetailRow(String label, String value, {required bool isLight}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-              width: 95,
-              child: Text('$label:',
-                  style: const TextStyle(color: Colors.white60))),
+          SizedBox(width: 95, child: Text('$label:')),
           Expanded(
               child: Text(value,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, color: Colors.white))),
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
         ],
       ),
     );
@@ -4739,7 +4563,7 @@ class _MainTabScreenState extends State<MainTabScreen>
                       margin: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3A1A1A),
+                        color: const Color(0xFF5D3A1A),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       clipBehavior: Clip.antiAlias,
@@ -4939,11 +4763,10 @@ class _ArcingBallNavBar extends StatelessWidget {
                           width: 10,
                           height: 10,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF1DB954),
+                            color: Colors.white,
                             shape: BoxShape.circle,
                             boxShadow: [
-                              BoxShadow(
-                                  color: Colors.black54, blurRadius: 4),
+                              BoxShadow(color: Colors.black54, blurRadius: 4),
                             ],
                           ),
                         ),
@@ -5056,6 +4879,9 @@ class _CircleDotLogoPainter extends CustomPainter {
 }
 
 class _GreenMusicLogoPainter extends CustomPainter {
+  final Color accentColor;
+  _GreenMusicLogoPainter({this.accentColor = const Color(0xFF22C55E)});
+
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
@@ -5063,13 +4889,13 @@ class _GreenMusicLogoPainter extends CustomPainter {
     final c = Offset(w / 2, h / 2);
 
     final greenPaint = Paint()
-      ..color = const Color(0xFF22C55E)
+      ..color = accentColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = w * 0.045
       ..strokeCap = StrokeCap.round;
 
     final fillGreen = Paint()
-      ..color = const Color(0xFF22C55E)
+      ..color = accentColor
       ..style = PaintingStyle.fill;
 
     for (int i = 0; i < 12; i++) {
@@ -5109,7 +4935,8 @@ class _GreenMusicLogoPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _GreenMusicLogoPainter oldDelegate) =>
+      oldDelegate.accentColor != accentColor;
 }
 
 class _AnimatedPressCard extends StatefulWidget {
