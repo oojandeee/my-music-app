@@ -2,26 +2,39 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-late _MusicAudioHandler _audioHandler;
+_MusicAudioHandler? _audioHandler;
+bool _audioServiceReady = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  _audioHandler = await AudioService.init(
-    builder: () => _MusicAudioHandler(),
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.musicstream.playback.channel',
-      androidNotificationChannelName: 'Now Playing',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-    ),
-  );
   runApp(const MyApp());
+}
+
+Future<void> _ensureAudioServiceInitialized() async {
+  if (_audioServiceReady && _audioHandler != null) return;
+  try {
+    final handler = await AudioService.init(
+      builder: () => _MusicAudioHandler(),
+      config: const AudioServiceConfig(
+        androidNotificationChannelId: 'com.musicflow.playback.channel',
+        androidNotificationChannelName: 'Music Flow Playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+      ),
+    );
+    _audioHandler = handler;
+    _audioServiceReady = true;
+  } catch (_) {
+    // Fallback so the UI never hangs on a white screen even if service init fails
+    _audioHandler ??= _MusicAudioHandler();
+  }
 }
 
 class _MusicAudioHandler extends BaseAudioHandler
@@ -81,7 +94,7 @@ class _MusicAudioHandler extends BaseAudioHandler
         id: id,
         title: title,
         artist: artist,
-        album: 'Music Stream',
+        album: 'Music Flow',
         duration: const Duration(minutes: 3),
       ),
     );
@@ -420,27 +433,67 @@ class MissionItem {
 }
 
 // ============================================================================
-// APP ROOT
+// APP ROOT + SPLASH WITH HALF-CD & ANIMATED "MUSIC FLOW"
 // ============================================================================
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const MainAppRoot();
-  }
+  State<MyApp> createState() => _MyAppState();
 }
 
-class MainAppRoot extends StatefulWidget {
-  const MainAppRoot({super.key});
+class _MyAppState extends State<MyApp> with SingleTickerProviderStateMixin {
+  AppSettings _settings = AppSettings();
+  bool _showSplash = true;
+  late final AnimationController _splashCtrl;
+  late final Animation<double> _logoScaleAnim;
+  late final Animation<double> _textSlideAnim;
+  late final Animation<double> _textFadeAnim;
 
   @override
-  State<MainAppRoot> createState() => MainAppRootState();
-}
+  void initState() {
+    super.initState();
+    _splashCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1450),
+    );
 
-class MainAppRootState extends State<MainAppRoot> {
-  AppSettings _settings = AppSettings();
+    _logoScaleAnim = CurvedAnimation(
+      parent: _splashCtrl,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutBack),
+    );
+    _textSlideAnim = Tween<double>(begin: 28, end: 0).animate(
+      CurvedAnimation(
+        parent: _splashCtrl,
+        curve: const Interval(0.32, 0.85, curve: Curves.elasticOut),
+      ),
+    );
+    _textFadeAnim = CurvedAnimation(
+      parent: _splashCtrl,
+      curve: const Interval(0.28, 0.72, curve: Curves.easeIn),
+    );
+
+    _splashCtrl.forward();
+    _initAndDismissSplash();
+  }
+
+  Future<void> _initAndDismissSplash() async {
+    await Future.any([
+      _ensureAudioServiceInitialized(),
+      Future.delayed(const Duration(milliseconds: 2200)),
+    ]);
+    await Future.delayed(const Duration(milliseconds: 1650));
+    if (mounted) {
+      setState(() => _showSplash = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _splashCtrl.dispose();
+    super.dispose();
+  }
 
   void updateSettings(AppSettings newSettings) {
     setState(() => _settings = newSettings);
@@ -465,7 +518,7 @@ class MainAppRootState extends State<MainAppRoot> {
         isNeon ? const Color(0xFF00F5D4) : const Color(0xFF1DB954);
 
     return MaterialApp(
-      title: 'Music Stream',
+      title: 'Music Flow',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: isLight ? Brightness.light : Brightness.dark,
@@ -480,10 +533,141 @@ class MainAppRootState extends State<MainAppRoot> {
                     isNeon ? const Color(0xFF130D2E) : const Color(0xFF181818),
               ),
       ),
-      home:
-          MainTabScreen(settings: _settings, onSettingsChanged: updateSettings),
+      home: _showSplash
+          ? _buildSplashScreen()
+          : MainTabScreen(
+              settings: _settings, onSettingsChanged: updateSettings),
     );
   }
+
+  Widget _buildSplashScreen() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: AnimatedBuilder(
+          animation: _splashCtrl,
+          builder: (context, _) {
+            final scale = _logoScaleAnim.value.clamp(0.0, 1.2);
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Transform.scale(
+                  scale: scale,
+                  child: SizedBox(
+                    width: 240,
+                    height: 150,
+                    child: CustomPaint(
+                      painter: _HalfVinylWaveLogoPainter(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Transform.translate(
+                  offset: Offset(0, _textSlideAnim.value),
+                  child: Opacity(
+                    opacity: _textFadeAnim.value.clamp(0.0, 1.0),
+                    child: const Text(
+                      'Music Flow',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _HalfVinylWaveLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width * 0.52;
+    final cy = size.height * 0.5;
+    final r = math.min(size.width * 0.24, size.height * 0.44);
+
+    final whiteStroke = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final whiteFill = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    // Right half vinyl disc
+    final discRect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+    final rightHalfPath = Path()
+      ..moveTo(cx + 3, cy - r)
+      ..arcTo(discRect, -math.pi / 2, math.pi, false)
+      ..close();
+    canvas.drawPath(rightHalfPath, whiteFill);
+
+    // Center spindle cutout & dot on the right half disc
+    canvas.drawArc(
+      Rect.fromCircle(center: Offset(cx + 3, cy), radius: r * 0.28),
+      -math.pi / 2,
+      math.pi,
+      true,
+      Paint()..color = Colors.black,
+    );
+    canvas.drawCircle(Offset(cx + 9, cy), 2.4, whiteFill);
+
+    // Groove scratches inside right half vinyl
+    for (int i = -4; i <= 4; i++) {
+      final yOff = i * (r * 0.14);
+      final xStart = cx + r * 0.42;
+      final xEnd = cx + r * (0.86 - (i.abs() * 0.06));
+      canvas.drawLine(
+        Offset(xStart, cy + yOff),
+        Offset(xEnd, cy + yOff - 4),
+        Paint()
+          ..color = Colors.black
+          ..strokeWidth = 1.6
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // Left waveform lines tapering into the half disc
+    final wavePath = Path();
+    wavePath.moveTo(size.width * 0.06, cy);
+    final peaks = [0.06, -0.08, 0.14, -0.22, 0.36, -0.55, 0.78, -0.94, 1.0, -0.92, 0.72];
+    final span = (cx - 4) - (size.width * 0.08);
+    for (int i = 0; i < peaks.length; i++) {
+      final frac = i / (peaks.length - 1);
+      final x = size.width * 0.08 + span * frac;
+      final amp = r * peaks[i];
+      wavePath.quadraticBezierTo(
+        x - (span / peaks.length) * 0.5,
+        cy + amp,
+        x,
+        cy + amp * 0.35,
+      );
+    }
+    canvas.drawPath(wavePath, whiteStroke);
+
+    // Right tail wave
+    final tailPath = Path();
+    final rightStart = cx + r + 2;
+    final rightEnd = size.width * 0.94;
+    tailPath.moveTo(rightStart, cy);
+    tailPath.quadraticBezierTo(rightStart + 8, cy - 16, rightStart + 16, cy);
+    tailPath.quadraticBezierTo(rightStart + 24, cy + 12, rightStart + 32, cy);
+    tailPath.lineTo(rightEnd, cy);
+    canvas.drawPath(tailPath, whiteStroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ============================================================================
@@ -510,7 +694,8 @@ class _MainTabScreenState extends State<MainTabScreen>
   late final AnimationController _tabArcController;
 
   String _selectedCategoryFilter = 'All';
-  AudioPlayer get _audioPlayer => _audioHandler.player;
+  AudioPlayer get _audioPlayer =>
+      (_audioHandler ??= _MusicAudioHandler()).player;
   Timer? _listeningTrackerTimer;
   late final AnimationController _beatAnimController;
 
@@ -883,19 +1068,24 @@ class _MainTabScreenState extends State<MainTabScreen>
         }
       });
 
-    _audioHandler.onSkipNextCallback = _playNextInQueue;
-    _audioHandler.onSkipPreviousCallback = _playPreviousInQueue;
-    _audioHandler.onPlayingChanged = (playing) {
-      if (mounted) {
-        setState(() => _isPlaying = playing);
-      }
-    };
-
     _buildCatalogData();
+    _bindAudioHandlerCallbacks();
     _loadPersistentState();
     _initAudioListeners();
     _applyVolumeBoost();
     _startSecondBySecondExpAndUsageTracker();
+  }
+
+  void _bindAudioHandlerCallbacks() {
+    final handler = _audioHandler;
+    if (handler == null) return;
+    handler.onSkipNextCallback = _playNextInQueue;
+    handler.onSkipPreviousCallback = _playPreviousInQueue;
+    handler.onPlayingChanged = (playing) {
+      if (mounted) {
+        setState(() => _isPlaying = playing);
+      }
+    };
   }
 
   void _onSelectTab(int newIndex) {
@@ -1223,7 +1413,7 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   Future<File> _getStateFile() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/music_app_persistent_v11.json');
+    return File('${dir.path}/music_app_persistent_v12.json');
   }
 
   Future<void> _savePersistentState() async {
@@ -1384,6 +1574,8 @@ class _MainTabScreenState extends State<MainTabScreen>
       return;
     }
     try {
+      await _ensureAudioServiceInitialized();
+      _bindAudioHandlerCallbacks();
       _applyVolumeBoost();
       setState(() {
         _currentPlayingTrack = track;
@@ -1406,15 +1598,24 @@ class _MainTabScreenState extends State<MainTabScreen>
       final effectiveVol = widget.settings.equalizerEnabled
           ? widget.settings.volumeBoost.clamp(0.0, 1.0)
           : 1.0;
-      final dur = await _audioHandler.playAssetTrack(
-        id: track.id,
-        title: track.title,
-        artist: track.artist,
-        assetPath: track.assetPath,
-        volume: effectiveVol,
-      );
+      final handler = _audioHandler;
+      Duration? dur;
+      if (handler != null) {
+        dur = await handler.playAssetTrack(
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          assetPath: track.assetPath,
+          volume: effectiveVol,
+        );
+      } else {
+        await _audioPlayer.stop();
+        await _audioPlayer.setVolume(effectiveVol);
+        dur = await _audioPlayer.setAsset(track.assetPath);
+        unawaited(_audioPlayer.play());
+      }
       if (dur != null && mounted) {
-        setState(() => _duration = dur);
+        setState(() => _duration = dur!);
       }
       if (openModal && mounted) _openFullPlayerModal(track);
     } catch (e) {
@@ -1447,12 +1648,12 @@ class _MainTabScreenState extends State<MainTabScreen>
 
   void _playPreviousInQueue() {
     if (_position.inSeconds > 3) {
-      _audioHandler.seek(Duration.zero);
+      _audioHandler?.seek(Duration.zero) ?? _audioPlayer.seek(Duration.zero);
     } else if (_recents.length > 1) {
       final prev = _recents[1];
       _playTrack(prev, openModal: false);
     } else {
-      _audioHandler.seek(Duration.zero);
+      _audioHandler?.seek(Duration.zero) ?? _audioPlayer.seek(Duration.zero);
     }
   }
 
@@ -2828,8 +3029,8 @@ class _MainTabScreenState extends State<MainTabScreen>
             final activeTrack = _currentPlayingTrack ?? track;
             final bool liked = _isLiked(activeTrack);
             final bool inPlaylist = _isInPlaylist(activeTrack);
-            final currentLyricLine =
-                _sampleLyricsLines[(livePos.inSeconds ~/ 5) % _sampleLyricsLines.length];
+            final currentLyricLine = _sampleLyricsLines[
+                (livePos.inSeconds ~/ 5) % _sampleLyricsLines.length];
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.94,
@@ -2970,7 +3171,8 @@ class _MainTabScreenState extends State<MainTabScreen>
                       onChanged: (val) async {
                         final target = Duration(milliseconds: val.round());
                         setState(() => _position = target);
-                        await _audioHandler.seek(target);
+                        await (_audioHandler?.seek(target) ??
+                            _audioPlayer.seek(target));
                       },
                     ),
                   ),
@@ -3065,9 +3267,9 @@ class _MainTabScreenState extends State<MainTabScreen>
                                 color: Colors.white),
                             onPressed: () {
                               if (playingNow) {
-                                _audioHandler.pause();
+                                _audioHandler?.pause() ?? _audioPlayer.pause();
                               } else {
-                                _audioHandler.play();
+                                _audioHandler?.play() ?? _audioPlayer.play();
                               }
                             },
                           );
@@ -4591,9 +4793,11 @@ class _MainTabScreenState extends State<MainTabScreen>
                                       size: 28),
                                   onPressed: () {
                                     if (_isPlaying) {
-                                      _audioHandler.pause();
+                                      _audioHandler?.pause() ??
+                                          _audioPlayer.pause();
                                     } else {
-                                      _audioHandler.play();
+                                      _audioHandler?.play() ??
+                                          _audioPlayer.play();
                                     }
                                   },
                                 ),
@@ -4668,7 +4872,8 @@ class _ArcingBallNavBar extends StatelessWidget {
               final t = Curves.easeInOutCubic.transform(arcController.value);
               final curX = startX + (endX - startX) * t;
               final arcLift = -14.0 * math.sin(t * math.pi);
-              final opacity = activeArc ? (1.0 - (t * 0.85)).clamp(0.0, 1.0) : 0.0;
+              final opacity =
+                  activeArc ? (1.0 - (t * 0.85)).clamp(0.0, 1.0) : 0.0;
 
               return Stack(
                 clipBehavior: Clip.none,
